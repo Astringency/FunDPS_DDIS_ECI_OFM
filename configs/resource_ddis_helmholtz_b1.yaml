@@ -1,0 +1,44 @@
+outdir: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/profiles/ddis_helmholtz_legacy_resource_b1
+data: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/data/resource-pilot/data/DiffPDE/helmholtz_resource_hf
+resolution: 128
+cond: false
+arch: ddpmpp-uno
+precond: edm
+duration: 0.001
+batch: 32
+batch_gpu: 1
+nn_resolution: null
+cbase: 64
+cres:
+- 1
+- 2
+- 4
+- 4
+lr: 0.0001
+lr_rampup: 5
+ema: 0.5
+dropout: 0.13
+augment: 0.12
+xflip: false
+channel: null
+DM_channel:
+- 0
+attn_resolutions:
+- 8
+num_blocks: 4
+fmult: 0.5
+rank: 0.1
+rbf_scale: 0.05
+fp16: false
+ls: 1
+bench: true
+cache: true
+workers: 2
+tick: 1
+snap: 1
+dump: 1
+seed: 0
+resume: null
+dry_run: false
+wandb: offline
+name: resource_only_legacy_ddis_helmholtz_b1
