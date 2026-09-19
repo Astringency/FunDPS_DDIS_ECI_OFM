@@ -1,0 +1,7 @@
+neuraloperator==0.3.0
+torchcfm==1.0.5
+torchdiffeq==0.2.4
+gpytorch==1.13
+easydict==1.13
+tensorboard==2.18.0
+
