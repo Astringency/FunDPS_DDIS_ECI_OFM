@@ -3,7 +3,7 @@
 set -euo pipefail
 method=$1
 pde=$2
-task_gpu=$3
+task_gpu_options=$3
 task_min_free=$4
 case "$pde" in poisson|helmholtz) ;; *) exit 2;; esac
 task_base=/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919
@@ -32,17 +32,27 @@ fi
 if test "$method" = diffusionpde; then
     while ! test -f "$task_out/data/diffusionpde/$pde/metadata.json"; do sleep 30; done
 fi
-# These locks serialize only this experiment's jobs assigned to the same GPU.
-# Other users' processes are respected through a fresh free-memory check.
-exec 9>"$task_out/locks/gpu_${task_gpu}.lock"
-echo "$(date -Iseconds) Waiting for experiment GPU $task_gpu lock" > "$task_state/status"
-flock 9
+# Locks serialize this experiment's jobs on each GPU. A candidate list allows
+# another safe slot when the preferred GPU is occupied by unrelated jobs.
+IFS=',' read -ra task_candidates <<< "$task_gpu_options"
 while true; do
-    task_free=$(nvidia-smi -i "$task_gpu" --query-gpu=memory.free --format=csv,noheader,nounits)
     task_ram=$(awk '/MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
-    if test "$task_free" -ge "$task_min_free" && test "$task_ram" -ge 64000 &&
-        awk '{exit !($1 < 110)}' /proc/loadavg; then break; fi
-    echo "$(date -Iseconds) Waiting for resources: GPU $task_gpu free=${task_free}MiB, host available=${task_ram}MiB" > "$task_state/status"
+    for task_candidate in "${task_candidates[@]}"; do
+        case "$task_candidate" in [0-7]) ;; *) exit 2;; esac
+        task_free=$(nvidia-smi -i "$task_candidate" --query-gpu=memory.free --format=csv,noheader,nounits)
+        if test "$task_free" -lt "$task_min_free" || test "$task_ram" -lt 64000; then continue; fi
+        if ! awk '{exit !($1 < 110)}' /proc/loadavg; then continue; fi
+        exec 9>"$task_out/locks/gpu_${task_candidate}.lock"
+        if flock -n 9; then
+            task_free=$(nvidia-smi -i "$task_candidate" --query-gpu=memory.free --format=csv,noheader,nounits)
+            if test "$task_free" -ge "$task_min_free"; then
+                task_gpu=$task_candidate
+                break 2
+            fi
+            flock -u 9
+        fi
+    done
+    echo "$(date -Iseconds) Waiting for an available GPU in [$task_gpu_options] with ${task_min_free}MiB free" > "$task_state/status"
     sleep 30
 done
 test ! -e "$task_state/started"
