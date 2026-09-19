@@ -1,5 +1,6 @@
 """Batch/observation adapter around official ECI and OFM sampling routines."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -65,6 +66,7 @@ def ofm_sample(prior, truth, mask, args):
 def main(args):
     args.output.mkdir(parents=True, exist_ok=True)
     config = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+    config["checkpoint_sha256"] = hashlib.sha256(args.checkpoint.read_bytes()).hexdigest()
     config_path = args.output / "run.json"
     if config_path.exists() and json.loads(config_path.read_text()) != config:
         raise ValueError("Output directory belongs to a different evaluation config")
