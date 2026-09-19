@@ -120,6 +120,16 @@ def make_hf(args):
     array_path = args.source / entry["file"]
     if sha256(array_path) != entry["sha256"]:
         raise ValueError(f"Transfer checksum mismatch: {array_path}")
+    ids = np.load(args.source / entry["ids"])
+    if args.split in ("train", "validation"):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "provenance"))
+        from fm4pde_split_reference import _train_val_split_indices
+        train_ids, validation_ids = _train_val_split_indices(50000, manifest["split_seed"], 0.1)
+        expected = train_ids.numpy() if args.split == "train" else validation_ids.numpy()
+    else:
+        expected = np.arange(100)
+    if not np.array_equal(ids, expected):
+        raise ValueError("Sample membership/order does not match the reference protocol")
     if args.output.exists():
         raise FileExistsError(args.output)
     features = Features({"id": Value("int32"), "data": Array3D((2, 128, 128), "float32")})
@@ -131,6 +141,33 @@ def make_hf(args):
     metadata = {key: manifest[key] for key in ("name", "stats", "shape", "__version__")}
     metadata.update(num_samples=len(dataset), split=args.split, source_manifest=str(args.source / "manifest.json"))
     (args.output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+
+
+def diffusionpde(args):
+    """Write the per-image HWC format expected by official ImageFolderDataset."""
+    manifest = json.loads((args.source / "manifest.json").read_text())
+    entry = manifest["outputs"][args.split]
+    path = args.source / entry["file"]
+    if sha256(path) != entry["sha256"]:
+        raise ValueError(f"Transfer checksum mismatch: {path}")
+    args.output.mkdir(parents=True, exist_ok=False)
+    array = np.load(path, mmap_mode="r")
+    stats = manifest["stats"]
+    mean = np.asarray(stats["mean"], dtype=np.float64)[:, None, None]
+    scale = np.asarray(stats["std"], dtype=np.float64)[:, None, None] / 0.5
+    # Invert exactly the published generate_poisson / generate_helmholtz scales.
+    sol_scale = 1 / 36.5 if manifest["name"] == "poisson" else 0.028
+    physical_scale = np.array([2.15, sol_scale])[:, None, None]
+    for index, x in enumerate(array):
+        physical = np.asarray(x, dtype=np.float64) * scale + mean
+        normalized = (physical / physical_scale).transpose(1, 2, 0).astype(np.float32)
+        np.save(args.output / f"sample_{index:05d}.npy", normalized)
+    (args.output / "metadata.json").write_text(json.dumps({
+        "name": manifest["name"], "split": args.split, "num_samples": len(array),
+        "source_manifest": str(args.source / "manifest.json"),
+        "physical_scales": [2.15, sol_scale],
+        "note": "Physical fields recovered from the float32 compact export; float32 roundoff applies."
+    }, indent=2) + "\n")
 
 
 if __name__ == "__main__":
@@ -150,5 +187,10 @@ if __name__ == "__main__":
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--cache", type=Path, required=True)
     p.set_defaults(func=make_hf)
+    p = sub.add_parser("diffusionpde")
+    p.add_argument("--source", type=Path, required=True)
+    p.add_argument("--split", choices=["train", "id"], default="train")
+    p.add_argument("--output", type=Path, required=True)
+    p.set_defaults(func=diffusionpde)
     args = parser.parse_args()
     args.func(args)
