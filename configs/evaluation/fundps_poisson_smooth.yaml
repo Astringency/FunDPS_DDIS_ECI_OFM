@@ -1,0 +1,35 @@
+outdir: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/evaluation/fundps/poisson/smooth
+name: fm4pde_poisson_smooth_first100
+dataset: poisson
+data_path: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/data/preprocessing/smooth/data/DiffPDE/poisson_test_hf
+data_offset: 0
+resolution: 128
+max_size: 100
+batch_size: 1
+pkl_path: __required__
+rbf_scale: 0.05
+seed: 0
+init_latents: rbf
+iterations: 500
+sigma_min: 0.01
+sigma_max: 10
+rho: 7
+observation:
+- type: sparse
+  loss_type: mse
+  known_indices:
+  - 500
+  - 500
+  normalize: true
+- type: pde
+  loss_type: huber
+  derivative_method: finite_diff
+guidance:
+  type: dps
+  weights:
+  - 0
+  - 20000
+  - 0
+n_plots: 1
+n_process_steps: 2
+wandb: offline
