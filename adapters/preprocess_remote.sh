@@ -9,13 +9,12 @@ for task_split in id smooth rough train validation; do
     while ! test -f "$task_out/data/compact/$pde/$task_split.npy"; do sleep 30; done
     task_name=${pde}_test_hf
     if test "$task_split" = train; then task_name=${pde}_hf; fi
+    if test -f "$task_out/data/preprocessing/$task_split/data/DiffPDE/$task_name/metadata.json"; then continue; fi
     "$task_base/venv/bin/python" -u "$task_base/orchestration/adapters/prepare_data.py" hf \
         --source "$task_out/data/compact/$pde" --split "$task_split" \
         --output "$task_out/data/preprocessing/$task_split/data/DiffPDE/$task_name" \
         --cache "$task_out/data/hf_cache/$pde/$task_split"
 done
-"$task_base/venv/bin/python" -u "$task_base/orchestration/adapters/prepare_data.py" diffusionpde \
-    --source "$task_out/data/compact/$pde" --output "$task_out/data/diffusionpde/$pde"
 mkdir -p "$task_out/data/surrogate_work/data/DiffPDE"
 ln -s "$task_out/data/preprocessing/train/data/DiffPDE/${pde}_hf" \
     "$task_out/data/surrogate_work/data/DiffPDE/${pde}_hf"

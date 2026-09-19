@@ -35,7 +35,7 @@ bench: true
 cache: true
 workers: 4
 tick: 10
-snap: 50
+snap: 25
 dump: 250
 seed: 0
 resume: null
