@@ -30,6 +30,14 @@ DDIS explicitly requires neuraloperator commit `98cd305099f4a2b232ed85773984f3e5
 - Server216 setup session `ddis_setup_mirror_20260919` installs Python 3.10 / PyTorch 2.7.1 dependencies in `venv`; logs/exit code under the result directory `setup/environment-mirror.*`. Initial direct PyPI setup failed with a verified download timeout (`setup/environment.exit = 2`); retry uses the Tsinghua PyPI mirror. Pinned neuraloperator must be installed from its local official checkout **after** the base installation succeeds.
 - No model training or formal evaluation has started. No custom model or sampler code has been written.
 
+Additional live preparation jobs:
+- Local `ddis_data_push_20260919` uploads completed raw files concurrently with the pull, excluding rsync temporary dotfiles, into the result directory `data/raw/`. Logs/exit code: `provenance/data-push.*`.
+- Server216 `ddis_dependency_20260919` waits for successful base environment installation, installs the pinned local neuraloperator checkout, records `setup/pip-freeze.txt`, and checks DDIS dependency imports. Log/exit: `setup/dependency.*`.
+- Server216 `ddis_pilot_data_20260919` waits for dependency success and the first authoritative Helmholtz shard, verifies its source SHA256, and invokes the unmodified official `utils/dataset_process.py` in an isolated pilot working directory. It intentionally has only shard 1 (10,000 cases); official warnings for missing shards 2–5 are expected **only for this pilot dataset**. Do not use it as the formal 50,000-case pool. Log/exit: `setup/pilot-data.*`.
+- `configs/pilot_{ddis,fundps}_helmholtz_b1.yaml` configure 1,000-image memory pilots with microbatch 1 and effective batch 32. They retain each upstream model configuration (DDIS 128, FunDPS 64), fixed seed 0, offline W&B and absolute output paths. These GPU pilots have **not** been launched yet. Recheck resources before launching.
+- Config/runbook Git revision `9298ef8` was bundled as `orchestration-pilots.bundle` for a separate server216 `orchestration/` checkout. Config changes are versioned locally; official source files remain unchanged.
+- A task-specific SSH multiplex socket `/tmp/ddis216-20260919-ssh` exists locally. Bulk transfer can delay other channels; `ssh -S none server216` is available for independent status checks. A transient SSH reset is not job failure.
+
 The first resource check found eight A800 80GB GPUs, 920GiB available host RAM and 128 logical CPUs. GPUs 0 and 4 were temporarily idle; existing FM4PDE queues target both. Do not treat this snapshot as a reservation: inspect current GPU processes and queues again immediately before any pilot or training launch. Preserve all other jobs and sessions.
 
 ## Compatibility findings and pending clarification
