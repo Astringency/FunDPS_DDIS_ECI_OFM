@@ -111,7 +111,11 @@ def main(args):
                 raise FloatingPointError("Nonfinite prediction")
             errors = np.linalg.norm((prediction - target).reshape(2, -1), axis=1) / np.linalg.norm(target.reshape(2, -1), axis=1)
             record.update(relative_l2_coefficient=float(errors[0]), relative_l2_solution=float(errors[1]))
-        except (FloatingPointError, RuntimeError) as error:
+        except (FloatingPointError, RuntimeError, AssertionError) as error:
+            numerical_failure = isinstance(error, FloatingPointError) or any(
+                text in str(error).lower() for text in ("underflow in dt", "non-finite", "nonfinite", "nan", "infinite"))
+            if not numerical_failure and not isinstance(error, torch.cuda.OutOfMemoryError):
+                raise
             record.update(status="failed", error=str(error), relative_l2_coefficient=None, relative_l2_solution=None)
             if isinstance(error, torch.cuda.OutOfMemoryError):
                 result_path.write_text(json.dumps(record, indent=2) + "\n")
