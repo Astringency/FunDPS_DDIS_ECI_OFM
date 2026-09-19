@@ -3,4 +3,5 @@ staging/
 *.bundle
 provenance/*.log
 provenance/*.exit
+provenance/chunk_logs/
 __pycache__/
