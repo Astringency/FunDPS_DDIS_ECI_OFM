@@ -3,11 +3,13 @@
 set -euo pipefail
 method=$1
 pde=$2
+task_split=$3
 case "$method" in ddis|fundps|ofm|eci) ;; *) exit 2;; esac
 case "$pde" in poisson|helmholtz) ;; *) exit 2;; esac
+case "$task_split" in id|smooth|rough) ;; *) exit 2;; esac
 task_base=/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919
 task_out=/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919
-task_state=$task_out/jobs/evaluate_${method}_${pde}
+task_state=$task_out/jobs/evaluate_${method}_${pde}_${task_split}
 task_result=$task_out/evaluation/$method/$pde
 mkdir -p "$task_state" "$task_result"
 test "$(cat "$task_out/profiles/${method}_sampling_full.exit")" = 0
@@ -30,12 +32,12 @@ task_training_method=$method
 if test "$method" = ofm || test "$method" = eci; then task_training_method=flow; fi
 wait_training "$task_training_method"
 task_checkpoint=$(readlink -f "$task_out/jobs/${task_training_method}_${pde}/early_stopping/best_checkpoint")
-cp "$task_out/jobs/${task_training_method}_${pde}/early_stopping/best.json" "$task_result/prior_selection.json"
+cp "$task_out/jobs/${task_training_method}_${pde}/early_stopping/best.json" "$task_state/prior_selection.json"
 task_surrogate=
 if test "$method" = ddis; then
     wait_training surrogate
     task_surrogate=$(readlink -f "$task_out/jobs/surrogate_${pde}/early_stopping/best_checkpoint")
-    cp "$task_out/jobs/surrogate_${pde}/early_stopping/best.json" "$task_result/surrogate_selection.json"
+    cp "$task_out/jobs/surrogate_${pde}/early_stopping/best.json" "$task_state/surrogate_selection.json"
 fi
 
 # Prioritize a training job that has not acquired its advertised GPU yet.
@@ -103,11 +105,9 @@ run_sampler() {
         --count "$task_count" --output "$task_destination"
 }
 
-echo "$(date -Iseconds) Checking full sampler with selected trained weights" > "$task_state/status"
-run_sampler id 1 "$task_result/preflight" > "$task_state/preflight.log" 2>&1
-for task_split in id smooth rough; do
-    echo "$(date -Iseconds) Evaluating $task_split first 100" > "$task_state/status"
-    run_sampler "$task_split" 100 "$task_result/$task_split" > "$task_state/${task_split}.log" 2>&1
-done
-echo "$(date -Iseconds) All 300 cases evaluated and output records verified" > "$task_state/status"
+echo "$(date -Iseconds) Checking $task_split sampler with selected trained weights" > "$task_state/status"
+run_sampler "$task_split" 1 "$task_result/preflight_${task_split}" > "$task_state/preflight.log" 2>&1
+echo "$(date -Iseconds) Evaluating $task_split first 100" > "$task_state/status"
+run_sampler "$task_split" 100 "$task_result/$task_split" > "$task_state/sampling.log" 2>&1
+echo "$(date -Iseconds) All 100 $task_split cases evaluated and output records verified" > "$task_state/status"
 date -Iseconds > "$task_state/evaluation_completed"
