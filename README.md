@@ -43,13 +43,17 @@ An asynchronous question asks whether minimal data-loading/configuration/evaluat
 - DDIS paper Appendix H.3 extends flow baselines to a two-channel coefficient/solution prior. Its public DDIS repository has no OFM/ECI pipeline. Paper flow settings: 300 epochs, batch 100, Fourier modes 32, hidden/projection width 128, Matérn lengthscale .01, variance 1, nu .5, sigma_min 1e-4. Do not claim the released ECI examples already reproduce this extension.
 - Official DiffusionPDE `merge_data.py` is hard-coded for Darcy. Poisson/Helmholtz preprocessing requires adapting only its field names/scales or finding an official supported equivalent.
 
-## Data equivalence still being investigated
+## Data difference verified
 
-All ten server216 `/data0/zhangxf/PDEdata` training files differ in whole-file SHA256 from the same names on server197. This does not by itself prove numerical array differences. A read-only numerical comparison of the first Poisson file is underway; use exact array checks to decide whether existing raw data can be reused. Until verified, rsync is fetching the authoritative files.
+All ten server216 `/data0/zhangxf/PDEdata` training files differ in whole-file SHA256 from the same names on server197. A read-only numerical comparison of Poisson shard 1 confirmed that the actual arrays also differ (both hashes and standard deviations). Do not reuse the old server216 raw training data. Rsync is fetching the authoritative files.
 
 Server216 Poisson shard 1 first 100 array hashes (float64 contiguous bytes):
 - `f_data`: `cee6f37f5d87a96dcd580e1e46aa2b45605333ea68e9aca2f290c46a47de4e83`
 - `phi_data`: `ac3010c6da4b47bb32ec1ea53175c133b7f0b637ddcd89175a19f90ee8bc4c8a`
+
+Server197 authoritative Poisson shard 1 first 100 array hashes:
+- `f_data`: `6051b8b824955b0c0a1d1aaebe2d47fcd8fb89a680ddb1a2620c27d18b1a096d`
+- `phi_data`: `4c602ae81032e43affd06f4a2928a344fa675ebca643923b0ec5e0951d2be760`
 
 FM4PDE's current training loader makes a 45,000/5,000 split from the five shards using a seeded `torch.randperm`, with PDE-specific seed offset. Resolve checkpoint-specific membership before claiming identical training/validation splits. Keep evaluation cases, observations and physical-unit metrics inspectable. Initial proposed evaluation IDs are 0–99 in each distribution; the requested 100 are test cases, not 100 posterior draws per case.
 
