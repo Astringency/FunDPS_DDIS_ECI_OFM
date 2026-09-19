@@ -18,6 +18,8 @@ def main(args):
     if not args.profile and (metadata.get("split") != "validation" or metadata["num_samples"] != 5000):
         raise ValueError("Early stopping requires the separate 5,000-case validation split")
     start = time.monotonic()
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cuda.matmul.allow_tf32 = False
     torch.cuda.reset_peak_memory_stats()
     with args.checkpoint.open("rb") as stream:
         snapshot = pickle.load(stream)
@@ -27,7 +29,7 @@ def main(args):
     # tensor. Reuse that exact loss/sampler without reconstructing either.
     data = PDEDataset(path=str(args.validation), resolution=model.img_resolution,
                       max_size=args.limit, shuffle=False, use_labels=False)
-    loader = torch.utils.data.DataLoader(data, batch_size=1, shuffle=False, num_workers=1)
+    loader = torch.utils.data.DataLoader(data, batch_size=args.batch, shuffle=False, num_workers=1)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     total, count = 0.0, 0
@@ -40,11 +42,11 @@ def main(args):
             value = loss.mean().item()
             if not np.isfinite(value):
                 raise FloatingPointError("Nonfinite validation loss")
-            total += value
-            count += 1
+            total += value * fields.shape[0]
+            count += fields.shape[0]
     torch.cuda.synchronize()
     record = {"checkpoint": str(args.checkpoint), "validation": str(args.validation),
-              "samples": count, "seed": args.seed, "loss": total / count,
+              "samples": count, "batch": args.batch, "seed": args.seed, "loss": total / count,
               "metric": "official saved EMA diffusion loss; fixed noise seed; no augmentation",
               "seconds": time.monotonic() - start,
               "peak_allocated_bytes": torch.cuda.max_memory_allocated(),
@@ -61,6 +63,7 @@ if __name__ == "__main__":
     parser.add_argument("--validation", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=20260920)
+    parser.add_argument("--batch", type=int, default=8)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--limit", type=int)
     args = parser.parse_args()

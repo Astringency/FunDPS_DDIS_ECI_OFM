@@ -115,7 +115,8 @@ def main(args):
                         validation_command = [sys.executable, str(Path(__file__).with_name("validate_diffusion.py")),
                             "--repo", str(args.repo), "--method", args.method,
                             "--checkpoint", str(checkpoint), "--validation", str(args.validation),
-                            "--output", str(result_path), "--seed", str(settings["validation_seed"])]
+                            "--output", str(result_path), "--seed", str(settings["validation_seed"]),
+                            "--batch", str(settings["validation_batch"])]
                         paused = child.poll() is None
                         if paused:
                             os.killpg(child.pid, signal.SIGSTOP)

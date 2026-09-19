@@ -4,6 +4,7 @@
   "poll_seconds": 15,
   "checkpoint_settle_seconds": 10,
   "validation_samples": 5000,
+  "validation_batch": 8,
   "validation_seed": 20260920,
   "methods": {
     "ddis": {"minimum_progress": 5000000, "progress_unit": "training_images", "validation_interval": 250000},
