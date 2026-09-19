@@ -1,5 +1,20 @@
 # DDIS and generative baselines on FM4PDE data
 
+## Current checkpoint — 2026-09-20 (supersedes historical status below)
+
+The user explicitly authorized **minimal data and runtime adapters while keeping algorithms official**. The earlier adapter question is resolved; do not ask again. No formal training or final evaluation has completed.
+
+- `adapters/prepare_data.py` uses official DDIS loaders/normalization and the unmodified FM4PDE split function from commit `ec9e658` (copied with provenance). Both June reference checkpoints have 45,000 training / 5,000 validation samples and seed 0. Historical source confirms PDE label offsets 1009/2018 and sorted split indices. Export stores the same normalized float32 values consumed by the diffusion trainers, explicit original sample IDs, and source/output SHA256 hashes.
+- Both PDE exports completed on server197 under `/research_data/users/zhangxifeng/C01Python/FM4PDE/outputs/ddis_comparison_20260919/export/`. Each contains train, validation, and first-100 ID/Smooth/Rough arrays. Setup logs are in the adjacent `setup/` directory. Initial export launch failed because the bundle branch was not checked out; `export_*_r2.*` is the corrected attempt.
+- Original raw-data pull/push sessions were intentionally stopped after compact exports became available. Their partial/raw files remain for later cleanup and must not be used for formal training. Local `ddis_relay_{helmholtz,poisson}_20260920` stream compact arrays through the workstation to server216 `data/compact/{pde}/`, retaining hidden partial files until SHA256 matches. Local logs: `provenance/relay_{pde}.*`. This replaces the former recovery controller. `adapters/relay_data.sh` supports resuming at the verified partial byte count.
+- Persistent SSH control socket: `/tmp/ddis216-recovered-20260919`. Reuse it for server216. Avoid many fresh simultaneous SSH connections.
+- DDIS/FunDPS environment installation succeeded (PyTorch 2.7.1, CUDA 12.6, pinned neuraloperator 2.0.0, datasets 3.6.0). A separate `venv-flow` is installing upstream neuraloperator 0.3.0 and flow dependencies; it shares read-only base dependency imports through a `.pth` file. Never remove the base venv while flow relies on it. Setup session `ddis_flow_env_20260920`, logs/exit `setup/flow-environment.*`.
+- Resource-only legacy data at `data/resource-pilot/` are deliberately separate from authoritative compact exports. DDIS microbatch 1 ran for the 300-second profile limit (exit 124); microbatch 4 completed the 1,000-image diagnostic (exit 0). FunDPS microbatch 1 hit the same profile time limit (exit 124). Observed GPU totals were approximately 13 GB, 17 GB, and 8 GB, respectively, including existing unrelated jobs. Inspect `profiles/` logs and memory CSVs before scaling. These runs are **not** formal training; never reuse their weights.
+- Paper Appendix H.3 explicitly says OFM regression and ECI sampling share the same pretrained OFM joint prior. Train one official OFM prior per PDE, then apply both official samplers. `adapters/train_flow.py` calls the unchanged `OFMModel.train`, official two-channel FNO and GP prior; it only provides data, CLI and an import-path alias. It preserves 300 epochs, batch 100, Adam 1e-3, StepLR(50, .8), Matérn(.01, 1, .5), sigma_min 1e-4, modes32/width128/projection128.
+- Remaining work: validate exported values and memberships, finish compact transfer and HF conversion, finish memory profiles (including surrogate, flow and DiffusionPDE), launch full training with safe batches, complete official sampling adapters and all 2×3×100 evaluations per method, verify and archive results. The goal remains active.
+
+Flow protocol source: [DDIS Appendix H.3](https://arxiv.org/html/2601.23280v3#A8.SS3).
+
 ## Requested outcome
 
 Train the official DDIS and generative baselines from arXiv:2601.23280 on server216, using FM4PDE data for two PDEs, then sample and evaluate 100 test cases on each of ID, Smooth and Rough for comparison with FM4PDE. Preserve official model, training and sampling implementations. Allocate GPUs concurrently after checking live jobs and measuring memory with small batches.
