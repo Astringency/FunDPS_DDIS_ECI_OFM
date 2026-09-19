@@ -1,9 +1,11 @@
 """Exercise checkpoint selection and stopping against a real child process."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "adapters"))
@@ -32,6 +34,35 @@ class EarlyStopTest(unittest.TestCase):
                 "Epoch 10/500 Summary:\n  Training Loss: 0.4\n  Average Batch Loss: 0.4\n"
                 "  Test Loss: 0.12\n  Epoch Time: 2.0s\n")
             self.assertEqual(found, [(10, checkpoint, 0.12)])
+
+    def test_cancelling_supervisor_stops_its_child(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = root / "policy.json"
+            policy.write_text(json.dumps({"relative_min_delta": .01, "patience": 2,
+                "poll_seconds": .05, "checkpoint_settle_seconds": .05,
+                "methods": {"flow": {"minimum_progress": 3, "progress_unit": "epochs"}}}))
+            command = [sys.executable, str(Path(__file__).resolve().parents[1] / "adapters/early_stop.py"),
+                "--method", "flow", "--policy", str(policy), "--state", str(root / "state"),
+                "--training-root", str(root / "models"), "--repo", str(root), "--validation", str(root),
+                "--", sys.executable, "-c", "import time; time.sleep(90)"]
+            supervisor = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            try:
+                deadline = time.monotonic() + 10
+                pid_path = root / "state/process.json"
+                while not pid_path.exists() and time.monotonic() < deadline:
+                    time.sleep(.05)
+                child_pid = json.loads(pid_path.read_text())["pid"]
+                supervisor.terminate()
+                supervisor.communicate(timeout=10)
+                self.assertNotEqual(supervisor.returncode, 0)
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(child_pid, 0)
+                self.assertTrue((root / "state/failure.json").exists())
+            finally:
+                if supervisor.poll() is None:
+                    supervisor.terminate()
+                    supervisor.communicate(timeout=10)
 
     def test_checkpoint_selection_and_process_isolation(self):
         try:

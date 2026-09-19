@@ -76,6 +76,10 @@ def stop_child(child):
         return child.wait()
 
 
+def interrupt_supervisor(signum, frame):
+    raise KeyboardInterrupt(f"Supervisor received signal {signum}")
+
+
 def main(args):
     settings = json.loads(args.policy.read_text())
     spec = settings["methods"][args.method]
@@ -91,6 +95,8 @@ def main(args):
     log_path = args.state / "official_training.log"
     with log_path.open("w") as log:
         child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(signum, interrupt_supervisor)
         write_json(args.state / "process.json", {"pid": child.pid, "process_group": child.pid})
         try:
             while True:
