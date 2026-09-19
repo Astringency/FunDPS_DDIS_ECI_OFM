@@ -32,7 +32,7 @@ observation:
   - 500
   normalize: true
 guidance:
-  type: daps
+  type: daps_multires
   surrogate_type: fno_pad
   sigma_min_1: 0.005
   sigma_max_2: 5
