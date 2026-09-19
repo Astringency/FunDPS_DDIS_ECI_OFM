@@ -1,0 +1,105 @@
+[
+  {
+    "file": "/large_storage/zhangxf/PDEdata/poisson/poisson_10000-128-128_1.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/poisson/poisson_10000-128-128_2.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/poisson/poisson_10000-128-128_3.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/poisson/poisson_10000-128-128_4.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/poisson/poisson_10000-128-128_5.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/poisson/poisson_test_10000-128-128_id.mat",
+    "grf_alpha": [
+      [
+        2
+      ]
+    ],
+    "grf_tau": [
+      [
+        3
+      ]
+    ],
+    "generation_seed": [
+      [
+        10000000
+      ]
+    ]
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/poisson/poisson_test_10000-128-128_rough.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/poisson/poisson_test_10000-128-128_smooth.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/helmholtz/helmholtz_10000-128-128_1.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/helmholtz/helmholtz_10000-128-128_2.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/helmholtz/helmholtz_10000-128-128_3.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/helmholtz/helmholtz_10000-128-128_4.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/helmholtz/helmholtz_10000-128-128_5.mat"
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/helmholtz/helmholtz_test_10000-128-128_id.mat",
+    "k": [
+      [
+        1
+      ]
+    ],
+    "grf_alpha": [
+      [
+        2
+      ]
+    ],
+    "grf_tau": [
+      [
+        3
+      ]
+    ],
+    "generation_seed": [
+      [
+        10000000
+      ]
+    ]
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/helmholtz/helmholtz_test_10000-128-128_rough.mat",
+    "k": [
+      [
+        1
+      ]
+    ],
+    "grf_alpha": [
+      [
+        1.5
+      ]
+    ],
+    "grf_tau": [
+      [
+        5
+      ]
+    ],
+    "generation_seed": [
+      [
+        30000000
+      ]
+    ]
+  },
+  {
+    "file": "/large_storage/zhangxf/PDEdata/helmholtz/helmholtz_test_10000-128-128_smooth.mat"
+  }
+]
