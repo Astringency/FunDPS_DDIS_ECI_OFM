@@ -1,11 +1,11 @@
 pde_direction: forward
-dataset_name: poisson
+dataset_name: helmholtz
 data_resolution: 128
 train_resolution:
 - 128
 - 128
 batch_size: 32
-num_epochs: 500
+num_epochs: 1
 learning_rate: 1e-4
 fno_modes:
 - 64
@@ -16,8 +16,8 @@ hidden_channels: 64
 n_layers: 4
 use_tqdm: true
 progress_every_epochs: 10
-eval_every: 10
-checkpoint_every: 100
+eval_every: 1
+checkpoint_every: 1
 wandb_project: ddis_fno_edm_no
-exps_outdir: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/training/ddis_surrogate/poisson
+exps_outdir: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/profiles/surrogate_b32
 resume: null

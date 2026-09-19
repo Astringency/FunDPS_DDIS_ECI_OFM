@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Queue an official training entry point behind verified data and memory gates.
+set -euo pipefail
+method=$1
+pde=$2
+task_gpu=$3
+task_min_free=$4
+case "$pde" in poisson|helmholtz) ;; *) exit 2;; esac
+task_base=/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919
+task_out=/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919
+task_state=$task_out/jobs/${method}_${pde}
+mkdir -p "$task_state" "$task_out/locks"
+task_training_meta=$task_out/data/preprocessing/train/data/DiffPDE/${pde}_hf/metadata.json
+task_validation_meta=$task_out/data/preprocessing/validation/data/DiffPDE/${pde}_test_hf/metadata.json
+case "$method" in
+    ddis) task_probe=ddis_b32; task_repo=DDIS;;
+    fundps) task_probe=fundps_b32; task_repo=FunDPS;;
+    flow) task_probe=flow_b100; task_repo=OFM;;
+    surrogate) task_probe=surrogate_b32; task_repo=DDIS;;
+    diffusionpde) task_probe=diffusionpde_b5; task_repo=DiffusionPDE;;
+    *) exit 2;;
+esac
+test "$(cat "$task_out/profiles/$task_probe.exit")" = 0
+echo "$(date -Iseconds) Waiting for verified $pde data" > "$task_state/status"
+while ! test -f "$task_training_meta"; do sleep 30; done
+if test "$method" = flow || test "$method" = surrogate; then
+    while ! test -f "$task_validation_meta"; do sleep 30; done
+fi
+if test "$method" = surrogate; then
+    while ! test -L "$task_out/data/surrogate_work/data/DiffPDE/${pde}_test_hf"; do sleep 30; done
+fi
+if test "$method" = diffusionpde; then
+    while ! test -f "$task_out/data/diffusionpde/$pde/metadata.json"; do sleep 30; done
+fi
+# These locks serialize only this experiment's jobs assigned to the same GPU.
+# Other users' processes are respected through a fresh free-memory check.
+exec 9>"$task_out/locks/gpu_${task_gpu}.lock"
+echo "$(date -Iseconds) Waiting for experiment GPU $task_gpu lock" > "$task_state/status"
+flock 9
+while true; do
+    task_free=$(nvidia-smi -i "$task_gpu" --query-gpu=memory.free --format=csv,noheader,nounits)
+    task_ram=$(awk '/MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
+    if test "$task_free" -ge "$task_min_free" && test "$task_ram" -ge 64000 &&
+        awk '{exit !($1 < 110)}' /proc/loadavg; then break; fi
+    echo "$(date -Iseconds) Waiting for resources: GPU $task_gpu free=${task_free}MiB, host available=${task_ram}MiB" > "$task_state/status"
+    sleep 30
+done
+test ! -e "$task_state/started"
+date -Iseconds > "$task_state/started"
+git -C "$task_base/orchestration" rev-parse HEAD > "$task_state/orchestration_revision"
+git -C "$task_base/official/$task_repo" rev-parse HEAD > "$task_state/official_revision"
+nvidia-smi > "$task_state/resources_at_start.txt"
+free -h >> "$task_state/resources_at_start.txt"
+export CUDA_VISIBLE_DEVICES=$task_gpu OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4
+export WANDB_MODE=offline WANDB_PROJECT=fm4pde_official_comparison
+export WANDB_DIR=$task_state MPLBACKEND=Agg
+export MASTER_PORT=$((29800 + task_gpu))
+echo "$(date -Iseconds) Training" > "$task_state/status"
+cd "$task_base/official/$task_repo"
+case "$method" in
+    ddis|fundps)
+        task_config=$task_base/orchestration/configs/training/${method}_${pde}.yaml
+        cp "$task_config" "$task_state/config.yaml"
+        task_script=train.py
+        if test "$method" = ddis; then task_script=scripts/train/train.py; fi
+        "$task_base/venv/bin/python" -u "$task_script" -c "$task_state/config.yaml"
+        ;;
+    flow)
+        "$task_base/venv-flow/bin/python" -u "$task_base/orchestration/adapters/train_flow.py" \
+            --ofm "$task_base/official/OFM" --train "$task_out/data/compact/$pde/train.npy" \
+            --validation "$task_out/data/compact/$pde/validation.npy" \
+            --output "$task_out/training/flow/$pde" --batch 100 --epochs 300
+        ;;
+    surrogate)
+        task_config=$task_base/orchestration/configs/training/ddis_surrogate_${pde}.yaml
+        cp "$task_config" "$task_state/config.yaml"
+        "$task_base/venv/bin/python" -u "$task_base/orchestration/adapters/train_surrogate.py" \
+            --repo "$task_base/official/DDIS" --config "$task_state/config.yaml" \
+            --workdir "$task_out/data/surrogate_work" --seed 0
+        ;;
+    diffusionpde)
+        "$task_base/venv/bin/python" -u train.py --outdir "$task_out/training/diffusionpde/$pde" \
+            --data "$task_out/data/diffusionpde/$pde" --cond 0 --arch ddpmpp --batch 60 \
+            --batch-gpu 5 --tick 10 --snap 50 --dump 100 --duration 20 --ema 0.05 --seed 0 --workers 4
+        ;;
+esac
+echo "$(date -Iseconds) Training exited successfully; evaluation pending" > "$task_state/status"
+date -Iseconds > "$task_state/training_completed"
