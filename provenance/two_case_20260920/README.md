@@ -28,7 +28,16 @@ inverse setting's active-channel weight magnitude for forward and both, without
 task-specific tuning. These are exploratory two-case diagnostics from weights
 saved during ongoing training, not the final 100-case comparison.
 
-Two tmux worker sessions use GPUs 4 and 6, with a 40 GiB free-memory gate and
-separate job logs and exit codes. The report generator verifies physical-unit
-relative L2 errors from stored predictions, creates `comparison.csv`,
-`summary.json`, `report.md`, and reconstruction figures when all jobs finish.
+The initial tmux workers used GPUs 4 and 6. On request, the remaining
+task/split cells were repartitioned across GPUs 0, 2, 3, 4, 5, 6, and 7;
+`parallel_shards.json` gives the nonoverlapping assignments. GPU 1 remained
+available for existing work. Each worker uses a 40 GiB free-memory gate and
+has its own log and exit code. Interrupted outputs from the transition are
+preserved under `workers/interrupted_*` rather than treated as results.
+
+The report generator independently verifies physical-unit relative L2 errors
+from stored predictions. Official sampler NaNs are recorded as numerical
+failures with their original prediction and log retained; no retry changes
+the sampling algorithm or hyperparameters. A finalizer creates
+`comparison.csv`, `summary.json`, `report.md`, 15 reconstruction figures,
+and a hash manifest; a local collector copies and verifies the artifacts.
