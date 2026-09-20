@@ -16,6 +16,14 @@ The expanded target is 87 formal split evaluations / 8,700 cases, with the
 original OFM/ECI evaluations included in the shared-OFM-prior group.
 See `provenance/scope-expansion-20260920.json`. These new runs are not complete.
 
+DDIS has two independently trained components. The `ddis_*` jobs train the
+diffusion prior over the unknown field; the `surrogate_*` jobs train the forward
+FNO from true paired fields `(a, u)`. The FNO does not consume diffusion-generated
+training data or wait for the diffusion checkpoint. Official DAPS combines both
+components during posterior sampling. Report them as “DDIS diffusion prior” and
+“DDIS forward FNO”; completion of the FNO alone does not complete DDIS training
+or its inverse evaluation.
+
 The user also authorized stopping DDIS/FunDPS at validated checkpoints when
 they plateau. `configs/plateau_priority.json` specifies three consecutive
 checks without 1% significant improvement, eligible from 1M diffusion images
@@ -27,7 +35,7 @@ and validation-best checkpoint verification; it does not restart training.
 
 Expanded implementation checkpoint, server216 2026-09-20 11:17:
 
-- Both DDIS auxiliary FNOs have stopped at confirmed plateaus. Poisson selected
+- Both DDIS forward FNOs have stopped at confirmed plateaus. Poisson selected
   epoch 20 (validation loss 0.005447); Helmholtz selected epoch 70 (0.002899).
   Four diffusion priors and both priority OFM priors continue. OFM currently
   runs at about 206 seconds per epoch; stopping time depends on future validation.
