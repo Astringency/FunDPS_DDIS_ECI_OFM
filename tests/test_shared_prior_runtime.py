@@ -38,6 +38,22 @@ class GPSpy:
 
 
 class OfficialInterfaceTests(unittest.TestCase):
+    def test_task_observation_masks_use_the_same_sample_draws(self):
+        target = torch.randn(1, 2, 128, 128)
+        truth = SimpleNamespace(coef=target[:, :1], sol=target[:, 1:])
+        inverse, indices = common_masks(truth, 17, task='inverse')
+        forward, _ = common_masks(truth, 17, task='forward')
+        joint, _ = common_masks(truth, 17, task='both')
+        self.assertEqual(int(inverse.coef.sum()), 0)
+        self.assertEqual(int(inverse.sol.sum()), 500)
+        self.assertEqual(int(forward.coef.sum()), 500)
+        self.assertEqual(int(forward.sol.sum()), 0)
+        self.assertEqual(int(joint.coef.sum()), 500)
+        self.assertEqual(int(joint.sol.sum()), 500)
+        torch.testing.assert_close(inverse.sol, joint.sol)
+        torch.testing.assert_close(forward.coef, joint.coef)
+        self.assertEqual(set(indices.tolist()), set(torch.nonzero(joint.sol.flatten()).flatten().tolist()))
+
     def test_input_gradient_and_parameter_freezing(self):
         model = LinearVelocity().eval().requires_grad_(False)
         net = FM4PDEVelocityAdapter(model)
