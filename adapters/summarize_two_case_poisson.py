@@ -165,14 +165,17 @@ def main():
                                                'better_than_fm_fm': sum(other < base for base, other in paired)}
     failed = [f"{row['method']}/{row['task']}/{row['split']}/{row['case']}/{row['sample_id']}"
               for row in rows if row['status'] != 'ok']
-    report = {'status': 'complete' if len(rows) == 210 and not missing and not failed else 'partial',
+    status = ('partial' if len(rows) != 210 or missing else
+              'complete_with_failures' if failed else 'complete')
+    report = {'status': status,
               'verified_rows': len(rows), 'expected_rows': 210,
+              'successful_rows': len(rows) - len(failed), 'failed_rows': len(failed),
               'missing': missing, 'failed': failed, 'comparisons': comparisons,
               'selection_source_sha256': plan['selected']['source_csv_sha256'],
               'provisional_checkpoint_sha256': {k: value['sha256'] for k, value in plan['checkpoints'].items()}}
     (root / 'summary.json').write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
     lines = ['# Two-case Poisson sampler comparison', '',
-             f"Status: {report['status']}; verified cases: {len(rows)}/210.", '',
+             f"Status: {report['status']}; verified cases: {len(rows)}/210; numerical failures: {len(failed)}.", '',
              'Each forward/inverse/both × ID/Smooth/Rough/Rough2/Rough3 cell contains the best and worst',
              'FM4PDE cases among the first 100, selected from the verified prior stress-test audit.',
              'The previous FM4PDE errors select cases only. All seven new samplings use the same',
@@ -188,7 +191,8 @@ def main():
     lines += ['', 'Task score is physical-unit relative L2 of the solution for forward,',
               'coefficient for inverse, and the mean of both relative L2 values for both.',
               'Lower is better. Each table entry is good / poor, using the independently',
-              'selected sample IDs printed in the second column. Missing runs are shown as —.', '']
+              'selected sample IDs printed in the second column. Numerical failures are',
+              'shown as FAIL; missing runs are shown as —.', '']
     for task in TASKS:
         lines += [f'## {task}', '',
                   '| Split | IDs (good / poor) | ' + ' | '.join(METHODS) + ' |',
@@ -204,7 +208,8 @@ def main():
                                 item['split'] == split and item['case'] == kind and
                                 item['method'] == method), None)
                     value = row['task_score'] if row is not None else None
-                    scores.append(f'{value:.3f}' if value is not None else '—')
+                    scores.append('FAIL' if row is not None and row['status'] != 'ok' else
+                                  f'{value:.3f}' if value is not None else '—')
                 values.append(' / '.join(scores))
             lines.append(f"| {split} | {selected_ids['good']} / {selected_ids['poor']} | " +
                          ' | '.join(values) + ' |')
@@ -219,8 +224,11 @@ def main():
     lines += ['', 'Timings are adapter wall time; DDIS/FunDPS include solver setup, while',
               'shared-prior timings exclude the one-time network load. They are not a',
               'controlled throughput benchmark.', '']
-    if missing or failed:
-        lines.append(f'Incomplete: {len(missing)} missing, {len(failed)} failed cases. See summary.json.')
+    if missing:
+        lines.append(f'Incomplete: {len(missing)} missing cases. See summary.json.')
+        lines.append('')
+    if failed:
+        lines.append(f'Numerical failures: {len(failed)} cases; original sampler logs and nonfinite outputs are retained.')
         lines.append('')
     lines += ['See comparison.csv for both field errors and observed-point fit, and figures/',
               'for paired prediction maps. These selected extremes cannot establish overall',

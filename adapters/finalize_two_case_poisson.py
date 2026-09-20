@@ -32,24 +32,37 @@ def main():
         time.sleep(args.poll_seconds)
     codes = [int(path.read_text().strip()) for path in exits]
     print(f'Worker exit codes: {codes}', flush=True)
+    recovery_script = Path(__file__).with_name('recover_two_case_numerical_failures.py')
+    subprocess.run([sys.executable, str(recovery_script), '--root', str(root)], check=True)
+    for exit_path, code in zip(exits, codes):
+        if not code:
+            continue
+        failures_path = exit_path.parent / 'failures.json'
+        if not failures_path.exists():
+            raise RuntimeError(f'Worker failed without a failure list: {exit_path}')
+        failures = json.loads(failures_path.read_text())
+        if not failures or any(not (Path(path) / 'recovered_numerical_failure.json').exists()
+                               for path in failures):
+            raise RuntimeError(f'Worker has unverified failures: {failures_path}')
     report_script = Path(__file__).with_name('summarize_two_case_poisson.py')
     subprocess.run([sys.executable, str(report_script), '--root', str(root), '--render'], check=True)
     summary = json.loads((root / 'summary.json').read_text())
-    if any(codes) or summary['status'] != 'complete' or summary['verified_rows'] != 210:
+    if summary['status'] not in ('complete', 'complete_with_failures') or summary['verified_rows'] != 210:
         raise RuntimeError(f'Pilot incomplete: worker exits={codes}, summary={summary["status"]}, '
                            f'verified rows={summary["verified_rows"]}/210')
     artifacts = [root / name for name in ('plan.json', 'selection.json', 'comparison.csv',
-                                          'summary.json', 'report.md')]
+                                          'summary.json', 'report.md', 'parallel_shards.json')]
     figures = sorted((root / 'figures').glob('*.png'))
     if len(figures) != 15:
         raise RuntimeError(f'Expected 15 paired figures, found {len(figures)}')
     artifact_hashes = {str(path.relative_to(root)): sha256(path) for path in artifacts + figures}
-    record = {'status': 'complete', 'completed_utc': datetime.now(timezone.utc).isoformat(),
+    record = {'status': summary['status'], 'completed_utc': datetime.now(timezone.utc).isoformat(),
               'workers': args.workers, 'worker_exit_codes': codes,
-              'verified_rows': summary['verified_rows'],
+              'verified_rows': summary['verified_rows'], 'failed_rows': summary['failed_rows'],
               'artifact_sha256': artifact_hashes}
     (root / 'finalized.json').write_text(json.dumps(record, indent=2) + '\n')
-    print(json.dumps({'status': 'complete', 'verified_rows': 210, 'figures': len(figures)}), flush=True)
+    print(json.dumps({'status': summary['status'], 'verified_rows': 210,
+                      'failed_rows': summary['failed_rows'], 'figures': len(figures)}), flush=True)
 
 
 if __name__ == '__main__':

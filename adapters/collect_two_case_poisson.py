@@ -10,7 +10,7 @@ import time
 
 
 REPORT_FILES = ('plan.json', 'selection.json', 'comparison.csv', 'summary.json',
-                'report.md', 'finalized.json', 'figures')
+                'report.md', 'parallel_shards.json', 'finalized.json', 'figures')
 
 
 def sha256(path):
@@ -59,7 +59,8 @@ def main():
     if source_code or consumer.returncode:
         raise RuntimeError(f'Report transfer failed: ssh/tar={source_code}, local tar={consumer.returncode}')
     manifest = json.loads((temporary / 'finalized.json').read_text())
-    assert manifest['status'] == 'complete' and manifest['verified_rows'] == 210
+    assert manifest['status'] in ('complete', 'complete_with_failures')
+    assert manifest['verified_rows'] == 210
     for name, expected in manifest['artifact_sha256'].items():
         actual = sha256(temporary / name)
         if actual != expected:
@@ -67,8 +68,9 @@ def main():
     if len(list((temporary / 'figures').glob('*.png'))) != 15:
         raise ValueError('Expected 15 final reconstruction figures')
     os.replace(temporary, destination)
-    print(json.dumps({'status': 'complete', 'destination': str(destination),
-                      'verified_rows': 210, 'verified_artifacts': len(manifest['artifact_sha256'])}), flush=True)
+    print(json.dumps({'status': manifest['status'], 'destination': str(destination),
+                      'verified_rows': 210, 'failed_rows': manifest['failed_rows'],
+                      'verified_artifacts': len(manifest['artifact_sha256'])}), flush=True)
 
 
 if __name__ == '__main__':
