@@ -54,12 +54,17 @@ def main():
         while not (ROOT/'transfers/extended/darcy.exit').exists() and time.time()-journal['started_unix']<1800:
             time.sleep(5)
     finally:
+        signal.signal(signal.SIGTERM,signal.SIG_IGN)
+        signal.signal(signal.SIGINT,signal.SIG_IGN)
         journal['resumed']=[]
         for record in records:
             current=identity(record['pid'])
             if record['pid'] in journal['suspended'] and current and current['start_ticks']==record['start_ticks'] and current['argv']==record['argv']:
-                os.kill(record['pid'],signal.SIGCONT)
-                journal['resumed'].append(record['pid'])
+                try:
+                    os.kill(record['pid'],signal.SIGCONT)
+                    journal['resumed'].append(record['pid'])
+                except ProcessLookupError:
+                    pass
         journal['finished_unix']=time.time()
         save()
         print('Restored uploads:',journal['resumed'],flush=True)
