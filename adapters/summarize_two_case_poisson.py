@@ -67,6 +67,9 @@ def main():
                     assert index in (summary.get('sample_ids') or [index])
                     record = json.loads(case_path.read_text())
                     assert record['sample_id'] == index
+                    timing = record.get('seconds')
+                    if method in ('ddis', 'fundps'):
+                        timing = json.loads((output / 'completed.json').read_text())['seconds_per_case']
                     data = {'method': method, 'task': task, 'split': split, 'case': kind,
                             'sample_id': index, 'status': record['status'],
                             'historical_fm4pde_selection_score': item['selection_score'],
@@ -78,7 +81,7 @@ def main():
                             'relative_l2_solution': record.get('relative_l2_solution'),
                             'observed_relative_l2_coefficient': None,
                             'observed_relative_l2_solution': None,
-                            'seconds': record.get('seconds')}
+                            'seconds': timing}
                     if record['status'] == 'ok':
                         prediction_path = (Path(record['prediction']) if method in ('ddis', 'fundps') else
                                            output / f'prediction_{index:03d}.npy')
@@ -198,6 +201,16 @@ def main():
             lines.append(f"| {split} | {selected_ids['good']} / {selected_ids['poor']} | " +
                          ' | '.join(values) + ' |')
         lines.append('')
+    lines += ['## Sampling time', '', '| Method | Completed cases | Median seconds per case |',
+              '|---|---:|---:|']
+    for method in METHODS:
+        elapsed = [row['seconds'] for row in rows if row['method'] == method and
+                   row['status'] == 'ok' and row['seconds'] is not None]
+        median = f'{np.median(elapsed):.1f}' if elapsed else '—'
+        lines.append(f'| {method} | {len(elapsed)} | {median} |')
+    lines += ['', 'Timings are adapter wall time; DDIS/FunDPS include solver setup, while',
+              'shared-prior timings exclude the one-time network load. They are not a',
+              'controlled throughput benchmark.', '']
     if missing or failed:
         lines.append(f'Incomplete: {len(missing)} missing, {len(failed)} failed cases. See summary.json.')
         lines.append('')
