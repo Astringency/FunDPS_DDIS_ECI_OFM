@@ -67,6 +67,13 @@ def main():
                     assert index in (summary.get('sample_ids') or [index])
                     record = json.loads(case_path.read_text())
                     assert record['sample_id'] == index
+                    run = json.loads((output / 'run.json').read_text())
+                    prior_key = ('ddis' if method == 'ddis' else 'fundps' if method == 'fundps'
+                                 else 'fm4pde' if method in ('eci_fm', 'fm_fm') else 'ofm')
+                    assert run['task'] == task and run['split'] == split
+                    assert run['checkpoint_sha256'] == plan['checkpoints'][prior_key]['sha256']
+                    if method == 'ddis':
+                        assert run['surrogate_sha256'] == plan['checkpoints']['surrogate']['sha256']
                     timing = record.get('seconds')
                     if method in ('ddis', 'fundps'):
                         timing = json.loads((output / 'completed.json').read_text())['seconds_per_case']
@@ -75,8 +82,7 @@ def main():
                             'historical_fm4pde_selection_score': item['selection_score'],
                             'historical_fm4pde_a': item['historical_fm4pde_relative_l2'].get('a'),
                             'historical_fm4pde_u': item['historical_fm4pde_relative_l2'].get('u'),
-                            'checkpoint_sha256': plan['checkpoints'][('ddis' if method == 'ddis' else
-                                'fundps' if method == 'fundps' else 'fm4pde' if method in ('eci_fm', 'fm_fm') else 'ofm')]['sha256'],
+                            'checkpoint_sha256': plan['checkpoints'][prior_key]['sha256'],
                             'relative_l2_coefficient': record.get('relative_l2_coefficient'),
                             'relative_l2_solution': record.get('relative_l2_solution'),
                             'observed_relative_l2_coefficient': None,
