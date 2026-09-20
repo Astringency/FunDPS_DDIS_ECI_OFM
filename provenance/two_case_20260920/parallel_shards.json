@@ -1,0 +1,16 @@
+{
+  "reason": "Run distinct Poisson task/split cells concurrently without changing samplers, checkpoints, observations, or case selection",
+  "completed_before_repartition": ["inverse:id", "inverse:smooth"],
+  "workers": {
+    "parallel_gpu0_20260920": {"gpu": 0, "cells": ["both:id", "both:rough3"]},
+    "parallel_gpu2_20260920": {"gpu": 2, "cells": ["forward:rough3"]},
+    "parallel_gpu3_20260920": {"gpu": 3, "cells": ["both:smooth"]},
+    "parallel_gpu3_followup_20260920": {"gpu": 3, "after": "parallel_gpu3_20260920", "cells": ["forward:smooth"]},
+    "parallel_gpu4_20260920": {"gpu": 4, "cells": ["inverse:rough", "forward:rough"]},
+    "parallel_gpu5_20260920": {"gpu": 5, "cells": ["both:rough"]},
+    "parallel_gpu5_followup_20260920": {"gpu": 5, "after": "parallel_gpu5_20260920", "cells": ["inverse:rough3"]},
+    "parallel_gpu6_20260920": {"gpu": 6, "cells": ["inverse:rough2", "forward:id"]},
+    "parallel_gpu7_20260920": {"gpu": 7, "cells": ["both:rough2"]},
+    "parallel_gpu7_followup_20260920": {"gpu": 7, "after": "parallel_gpu7_20260920", "cells": ["forward:rough2"]}
+  }
+}
