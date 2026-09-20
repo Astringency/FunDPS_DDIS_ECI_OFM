@@ -27,12 +27,22 @@ def main():
     parser.add_argument('--remote-root', required=True)
     parser.add_argument('--local-output', required=True, type=Path)
     parser.add_argument('--poll-seconds', type=int, default=30)
+    parser.add_argument('--timeout-hours', type=float, default=24)
     args = parser.parse_args()
     remote = args.remote_root.rstrip('/')
     marker = remote + '/finalized.json'
+    failed_marker = remote + '/finalization_failed.json'
+    deadline = time.monotonic() + args.timeout_hours * 3600
     while subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
                           args.server, 'test', '-f', marker], check=False,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+        failed = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
+                                 args.server, 'test', '-f', failed_marker], check=False,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+        if failed:
+            raise RuntimeError(f'Remote pilot finalization failed: {failed_marker}')
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f'Remote pilot did not finalize within {args.timeout_hours} hours')
         time.sleep(args.poll_seconds)
     destination = args.local_output
     temporary = destination.with_name('.' + destination.name + '.partial')

@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import traceback
 from datetime import datetime, timezone
 
 
@@ -50,4 +51,12 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as error:
+        if '--root' in sys.argv:
+            root = Path(sys.argv[sys.argv.index('--root') + 1])
+            (root / 'finalization_failed.json').write_text(json.dumps({
+                'status': 'failed', 'failed_utc': datetime.now(timezone.utc).isoformat(),
+                'error': str(error), 'traceback': traceback.format_exc()}, indent=2) + '\n')
+        raise
