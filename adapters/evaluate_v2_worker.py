@@ -14,6 +14,7 @@ AD = BASE / 'orchestration/adapters'
 PY = BASE / 'venv-shared-prior/bin/python'
 p = argparse.ArgumentParser()
 p.add_argument('--gpu', type=int, required=True)
+p.add_argument('--eci-ofm-only', action='store_true', help='Run ECI with completed OFM priors alongside the ECI-FM queue.')
 a = p.parse_args()
 ROOT.mkdir(exist_ok=True)
 matrix = json.loads((BASE / 'orchestration/configs/evaluation_matrix_v2.json').read_text())
@@ -27,6 +28,8 @@ def run(cmd, logfile):
 while True:
     matrix = json.loads((BASE / 'orchestration/configs/evaluation_matrix_v2.json').read_text())['evaluations']
     matrix = [r for r in matrix if r['prior'] in ('fm4pde', 'ofm')]
+    if a.eci_ofm_only:
+        matrix = [r for r in matrix if (r['prior'], r['method']) == ('ofm', 'eci')]
     busy = False
     for q in ('poisson', 'helmholtz', 'darcy', 'nsnonbounded', 'burger'):
         state = OUT / 'jobs' / f'flow_{q}'
