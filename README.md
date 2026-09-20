@@ -1,5 +1,30 @@
 # DDIS and generative baselines on FM4PDE data
 
+## Expanded scope — 2026-09-20, supersedes the two-PDE scope below
+
+The user now requests two comparisons on Poisson, Helmholtz, Darcy,
+Navier–Stokes (`nsnonbounded`) and Burgers (`burger`): (1) ECI and FM4PDE
+sampling with each existing FM4PDE ordinary-FM checkpoint; (2) ECI, OFM and
+FM4PDE sampling with each OFM-trained operator-FM checkpoint. Prioritize
+Poisson/Helmholtz OFM training, then train the other three OFM priors.
+Reuse each group's exact pretrained weights; preserve the original algorithms.
+
+The user confirmed ID/Smooth/Rough IDs 0–99, 500 noiseless observations,
+inverse tasks for the first four PDEs, and FM4PDE's trajectory-completion task
+for Burgers. Retain the original DDIS/FunDPS comparisons on Poisson/Helmholtz.
+The expanded target is 87 formal split evaluations / 8,700 cases, with the
+original OFM/ECI evaluations included in the shared-OFM-prior group.
+See `provenance/scope-expansion-20260920.json`. These new runs are not complete.
+
+The user also authorized stopping DDIS/FunDPS at validated checkpoints when
+they plateau. `configs/plateau_priority.json` specifies three consecutive
+checks without 1% significant improvement, eligible from 1M diffusion images
+or epoch 50 for FNO surrogates, and only after the checkpoint current at the
+request. OFM's existing early-stop policy is unchanged. For legacy running
+supervisors, `adapters/plateau_priority.py` preserves the intentional signal
+exit in an audit directory and publishes completion only after process exit
+and validation-best checkpoint verification; it does not restart training.
+
 ## Current checkpoint — 2026-09-20 (supersedes historical status below)
 
 The user authorized minimal data/runtime adapters with official algorithms unchanged, then **removed DiffusionPDE and requested early stopping for every remaining model**. Active scope: DDIS, FunDPS, OFM and ECI on Poisson/Helmholtz. OFM and ECI share one official joint prior per PDE (paper H.3). Formal training started on 2026-09-20 around server time 01:23. No formal training or final evaluation has completed at this checkpoint.

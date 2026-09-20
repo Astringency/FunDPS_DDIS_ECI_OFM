@@ -1,0 +1,14 @@
+{
+  "reason": "User requested prioritizing five OFM priors and easier stopping for DDIS/FunDPS on 2026-09-20",
+  "relative_min_delta": 0.01,
+  "patience": 3,
+  "poll_seconds": 15,
+  "jobs": {
+    "ddis_poisson": {"minimum_progress": 1000000, "after_progress": 1252032},
+    "ddis_helmholtz": {"minimum_progress": 1000000, "after_progress": 1001632},
+    "fundps_poisson": {"minimum_progress": 1000000, "after_progress": 1502432},
+    "fundps_helmholtz": {"minimum_progress": 1000000, "after_progress": 1252032},
+    "surrogate_poisson": {"minimum_progress": 50, "after_progress": 40},
+    "surrogate_helmholtz": {"minimum_progress": 50, "after_progress": 90}
+  }
+}
