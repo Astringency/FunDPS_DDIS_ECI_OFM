@@ -25,7 +25,7 @@ supervisors, `adapters/plateau_priority.py` preserves the intentional signal
 exit in an audit directory and publishes completion only after process exit
 and validation-best checkpoint verification; it does not restart training.
 
-Expanded implementation checkpoint, server216 2026-09-20 10:59:
+Expanded implementation checkpoint, server216 2026-09-20 11:17:
 
 - Both DDIS auxiliary FNOs have stopped at confirmed plateaus. Poisson selected
   epoch 20 (validation loss 0.005447); Helmholtz selected epoch 70 (0.002899).
@@ -33,8 +33,10 @@ Expanded implementation checkpoint, server216 2026-09-20 10:59:
   runs at about 206 seconds per epoch; stopping time depends on future validation.
 - Darcy/NS/Burgers authoritative exports are complete on server197, with
   45,000/5,000 training/validation cases and three 100-case tests. Checksummed
-  relays to server216 and three training controllers are live; formal training
-  waits for verified data and successful batch-1/batch-100 memory profiles.
+  relays to server216 and three training controllers are live. Burgers passed
+  both profiles (batch 100 peak 23,544,725,504 bytes) and is training on GPU 0,
+  trainer PID 583046 / supervisor PID 583039; first five epochs took about
+  149.3 seconds each. Darcy/NS still wait for their checked transfers.
 - The five existing ordinary-FM checkpoints are selected by the pinned current
   `configs/main` files, not by modification time. All are schema-3 checkpoints
   saved at epoch 299, with their own channel standardizers and no saved EMA.
@@ -57,9 +59,25 @@ Expanded implementation checkpoint, server216 2026-09-20 10:59:
   Each addition must pass a full-schedule single-case preflight before its 100 cases.
   `validate_shared_prior.py` independently recomputes physical errors and preserves
   failures without capping or substituting successful-case means for full means.
-- No added formal sampling result exists yet. Real-checkpoint GPU compatibility
-  and expanded 87-run aggregation still require completion. The original 24-run
-  summary is a subset and cannot satisfy the expanded goal by itself.
+- Four complete-schedule GPU compatibility profiles passed and were independently
+  verified: native FM4PDE on provisional Poisson OFM epoch 90; and ECI/OFM/FM4PDE
+  on the Burgers resource-profile prior. These are not formal accuracy results.
+  See `provenance/shared-prior-gpu-profiles.json`; selected-final-weight preflights
+  are still mandatory. Ordinary-FM weight transfer and GPU checks remain pending.
+- All 15 native truth splits match their compact exports to float32 roundoff.
+  The first case of every split passes native PDE-loss/input-gradient checks and
+  has exactly 500 active solution observations. NS retains the native approximate
+  endpoint-secant residual. Evidence: `provenance/shared-prior-input-checks.json`.
+- `summarize_expanded_evaluations.py` now waits for all 87 verified splits and
+  checks identical weights within each prior/PDE group, all masks, native/compact
+  truth alignment, and all 8,700 case records. It also creates 60 paired comparisons
+  with failed cases retained. Four completeness/failure-accounting tests passed.
+  The expanded summary controller is live; no formal evaluation has completed.
+- A local bounded transfer controller temporarily suspends only upload PIDs 653639
+  (NS) and 655881 (ordinary-FM assets), prioritizing Darcy to fill the remaining
+  idle training GPU. It resumes both when Darcy ends or after 30 minutes, and
+  restores on interruption after checking PID identity. Audit: ignored task-local
+  `transfers/darcy-priority.json`; tmux `ddis_transfer_priority_20260920`.
 
 ## Current checkpoint — 2026-09-20 (supersedes historical status below)
 

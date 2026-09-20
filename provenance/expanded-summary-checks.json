@@ -1,0 +1,15 @@
+{
+  "orchestration_revision_tested": "93d865e",
+  "server": "server216",
+  "tests": 4,
+  "skips": 0,
+  "seconds": 0.005,
+  "exit_code": 0,
+  "checks": [
+    "The requested 87-run matrix rejects missing and duplicate evaluations",
+    "Failed cases remain in paired output and invalidate the all-case mean",
+    "Missing or duplicate paired sample IDs are rejected",
+    "Burgers compares the trajectory metric without inventing a coefficient metric"
+  ],
+  "scope": "Aggregation integrity tests; formal 8700-case verification is pending real sampling outputs"
+}
