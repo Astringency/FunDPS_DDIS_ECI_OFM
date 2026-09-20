@@ -24,6 +24,28 @@ components during posterior sampling. Report them as “DDIS diffusion prior” 
 “DDIS forward FNO”; completion of the FNO alone does not complete DDIS training
 or its inverse evaluation.
 
+The provisional runner samples from the current validation-best checkpoint
+while training continues. It freezes the checkpoint path and hash in a separate
+`evaluation_provisional` result folder, uses the original full sampling schedule,
+and independently verifies physical-unit predictions. It accepts
+`PRIOR METHOD PDE SPLIT COUNT GPU OUTPUT_ROOT`, where `COUNT` is 1 (single-case
+pilot) or 100 (the confirmed evaluation scale). For example, on server216:
+
+```bash
+BASE=/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919
+OUT=/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919
+RUN=$OUT/evaluation_provisional/ddis_poisson_id_$(date +%Y%m%d_%H%M%S)
+bash "$BASE/orchestration/adapters/run_provisional_evaluation.sh" ddis ddis poisson id 1 6 "$RUN"
+```
+
+Change `1` to `100` for the full split. For an ordinary-FM checkpoint, use
+`fm4pde eci poisson id 100`; for an OFM checkpoint, use
+`ofm eci poisson id 100`, `ofm ofm poisson id 100`, or
+`ofm fm4pde poisson id 100`. Select a GPU with at least 40 GiB free. A single
+DDIS/FunDPS case takes several minutes at the published sampling schedule;
+the 100-case run takes correspondingly longer. The runner does not publish
+provisional results as completed formal comparisons.
+
 The user also authorized stopping DDIS/FunDPS at validated checkpoints when
 they plateau. `configs/plateau_priority.json` specifies three consecutive
 checks without 1% significant improvement, eligible from 1M diffusion images
