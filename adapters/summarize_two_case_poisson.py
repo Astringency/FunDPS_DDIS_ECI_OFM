@@ -154,9 +154,11 @@ def main():
                         paired.append((base['task_score'], other['task_score']))
             comparisons[f'{method}/{task}'] = {'paired_cases': len(paired),
                                                'better_than_fm_fm': sum(other < base for base, other in paired)}
-    report = {'status': 'complete' if len(rows) == 210 and not missing else 'partial',
+    failed = [f"{row['method']}/{row['task']}/{row['split']}/{row['case']}/{row['sample_id']}"
+              for row in rows if row['status'] != 'ok']
+    report = {'status': 'complete' if len(rows) == 210 and not missing and not failed else 'partial',
               'verified_rows': len(rows), 'expected_rows': 210,
-              'missing': missing, 'comparisons': comparisons,
+              'missing': missing, 'failed': failed, 'comparisons': comparisons,
               'selection_source_sha256': plan['selected']['source_csv_sha256'],
               'provisional_checkpoint_sha256': {k: value['sha256'] for k, value in plan['checkpoints'].items()}}
     (root / 'summary.json').write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
@@ -172,7 +174,36 @@ def main():
              '|---|---:|---:|']
     for key, value in comparisons.items():
         lines.append(f"| {key} | {value['paired_cases']} | {value['better_than_fm_fm']} |")
-    lines += ['', 'See comparison.csv for every physical-unit relative L2 error and figures/ for predictions.', '']
+    lines += ['', 'Task score is physical-unit relative L2 of the solution for forward,',
+              'coefficient for inverse, and the mean of both relative L2 values for both.',
+              'Lower is better. Each table entry is good / poor, using the independently',
+              'selected sample IDs printed in the second column. Missing runs are shown as —.', '']
+    for task in TASKS:
+        lines += [f'## {task}', '',
+                  '| Split | IDs (good / poor) | ' + ' | '.join(METHODS) + ' |',
+                  '|---|---|'+ '|'.join(['---:'] * len(METHODS)) + '|']
+        for split in SPLITS:
+            chosen = [item for item in selection if item['task'] == task and item['split'] == split]
+            selected_ids = {item['label']: item['index'] for item in chosen}
+            values = []
+            for method in METHODS:
+                scores = []
+                for kind in ('good', 'poor'):
+                    row = next((item for item in rows if item['task'] == task and
+                                item['split'] == split and item['case'] == kind and
+                                item['method'] == method), None)
+                    value = row['task_score'] if row is not None else None
+                    scores.append(f'{value:.3f}' if value is not None else '—')
+                values.append(' / '.join(scores))
+            lines.append(f"| {split} | {selected_ids['good']} / {selected_ids['poor']} | " +
+                         ' | '.join(values) + ' |')
+        lines.append('')
+    if missing or failed:
+        lines.append(f'Incomplete: {len(missing)} missing, {len(failed)} failed cases. See summary.json.')
+        lines.append('')
+    lines += ['See comparison.csv for both field errors and observed-point fit, and figures/',
+              'for paired prediction maps. These selected extremes cannot establish overall',
+              'method ranking across the full 100-case benchmark.', '']
     (root / 'report.md').write_text('\n'.join(lines))
     print(json.dumps({'status': report['status'], 'verified_rows': len(rows), 'missing': len(missing)}))
 
