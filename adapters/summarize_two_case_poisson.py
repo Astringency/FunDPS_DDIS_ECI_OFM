@@ -31,6 +31,9 @@ def main():
     plan = json.loads((root / 'plan.json').read_text())
     selection = plan['selected']['cases']
     rows, missing = [], []
+    rng = np.random.RandomState(0)
+    observation_indices = [(rng.choice(128 * 128, 500, replace=False),
+                            rng.choice(128 * 128, 500, replace=False)) for _ in range(100)]
     truths = {}
     for split in SPLITS:
         saved = torch.load(root / 'assets' / 'truth' / 'poisson' / (split + '.pt'),
@@ -73,6 +76,8 @@ def main():
                                 'fundps' if method == 'fundps' else 'fm4pde' if method in ('eci_fm', 'fm_fm') else 'ofm')]['sha256'],
                             'relative_l2_coefficient': record.get('relative_l2_coefficient'),
                             'relative_l2_solution': record.get('relative_l2_solution'),
+                            'observed_relative_l2_coefficient': None,
+                            'observed_relative_l2_solution': None,
                             'seconds': record.get('seconds')}
                     if record['status'] == 'ok':
                         prediction_path = (Path(record['prediction']) if method in ('ddis', 'fundps') else
@@ -84,6 +89,14 @@ def main():
                             rel = float(np.linalg.norm(prediction[channel] - truth[channel]) /
                                         np.linalg.norm(truth[channel]))
                             np.testing.assert_allclose(data['relative_l2_' + name], rel, rtol=1e-6, atol=1e-8)
+                            active = ((task in ('forward', 'both') and channel == 0) or
+                                      (task in ('inverse', 'both') and channel == 1))
+                            if active:
+                                pixels = observation_indices[index][channel]
+                                observed = truth[channel].reshape(-1)[pixels]
+                                estimated = prediction[channel].reshape(-1)[pixels]
+                                data['observed_relative_l2_' + name] = float(
+                                    np.linalg.norm(estimated - observed) / np.linalg.norm(observed))
                         pictures[(kind, method)] = prediction
                     data['task_score'] = score(data, task)
                     rows.append(data)
