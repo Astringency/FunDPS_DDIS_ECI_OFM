@@ -33,18 +33,24 @@ supervisors, `adapters/plateau_priority.py` preserves the intentional signal
 exit in an audit directory and publishes completion only after process exit
 and validation-best checkpoint verification; it does not restart training.
 
-Expanded implementation checkpoint, server216 2026-09-20 11:17:
+Expanded implementation checkpoint, server216 2026-09-20 11:35:
 
 - Both DDIS forward FNOs have stopped at confirmed plateaus. Poisson selected
   epoch 20 (validation loss 0.005447); Helmholtz selected epoch 70 (0.002899).
-  Four diffusion priors and both priority OFM priors continue. OFM currently
-  runs at about 206 seconds per epoch; stopping time depends on future validation.
+  Four diffusion priors and both priority OFM priors continue. Both priority OFM
+  priors reached epoch 100 with five checks without significant improvement.
+  OFM runs at about 206 seconds per epoch; stopping time depends on future validation.
 - Darcy/NS/Burgers authoritative exports are complete on server197, with
   45,000/5,000 training/validation cases and three 100-case tests. Checksummed
-  relays to server216 and three training controllers are live. Burgers passed
+  relays for Darcy/Burgers are complete; the NS relay and three training controllers
+  are live. Burgers passed
   both profiles (batch 100 peak 23,544,725,504 bytes) and is training on GPU 0,
   trainer PID 583046 / supervisor PID 583039; first five epochs took about
-  149.3 seconds each. Darcy/NS still wait for their checked transfers.
+  149.3 seconds each. Its first validation at epoch 10 is 0.015166. Darcy's
+  five arrays passed checksum verification and both GPU profiles passed;
+  batch 100 peak reserved memory is 23,544,725,504 bytes. Formal Darcy training
+  is live on GPU 1, trainer PID 630977 / supervisor PID 630976. NS still waits
+  for its checked transfer and then training capacity.
 - The five existing ordinary-FM checkpoints are selected by the pinned current
   `configs/main` files, not by modification time. All are schema-3 checkpoints
   saved at epoch 299, with their own channel standardizers and no saved EMA.
@@ -81,11 +87,20 @@ Expanded implementation checkpoint, server216 2026-09-20 11:17:
   truth alignment, and all 8,700 case records. It also creates 60 paired comparisons
   with failed cases retained. Four completeness/failure-accounting tests passed.
   The expanded summary controller is live; no formal evaluation has completed.
-- A local bounded transfer controller temporarily suspends only upload PIDs 653639
-  (NS) and 655881 (ordinary-FM assets), prioritizing Darcy to fill the remaining
-  idle training GPU. It resumes both when Darcy ends or after 30 minutes, and
-  restores on interruption after checking PID identity. Audit: ignored task-local
-  `transfers/darcy-priority.json`; tmux `ddis_transfer_priority_20260920`.
+- The bounded Darcy transfer-priority controller completed normally after 23
+  minutes and restored upload PIDs 653639 (NS) and 655881 (ordinary-FM assets).
+  Both uploads are running again; no upload remains intentionally suspended.
+  Audit: ignored task-local `transfers/darcy-priority.json`, exit 0.
+- New OFM checkpoints are readable with finite parameters, and the Poisson and
+  Helmholtz parameters changed between checkpoints. Best links match the minimum
+  recorded validation loss. The first Burgers validation checkpoint also passed.
+  Evidence: `provenance/flow-checkpoint-audit-20260920-1130.json`.
+- The runtime archive now includes all six official source repositories, the
+  orchestration source through `b1082a76fbbe`, and records for all three Python
+  environments. Seven Git bundles passed independent restore checks; all bundle
+  and environment-freeze hashes match. Server evidence:
+  `reproducibility/runtime-b1082a76fbbe.json`. This archives runtime provenance;
+  training, ordinary-FM GPU checks, formal evaluations and final results remain pending.
 
 ## Current checkpoint — 2026-09-20 (supersedes historical status below)
 

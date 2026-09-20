@@ -1,0 +1,52 @@
+{
+  "checked_at_server_time": "2026-09-20T11:37:17",
+  "scope": "Darcy formal training startup after verified transfer and resource profiling; not completed training",
+  "trainer_pid": 630977,
+  "supervisor_pid": 630976,
+  "trainer_identity_verified": true,
+  "cpu_ticks": 21926,
+  "previous_cpu_ticks": 5764,
+  "gpu": 1,
+  "training_status": "Training official OFM prior with early stopping",
+  "training_log_tail": [
+    "Parameters: 71420418"
+  ],
+  "data_verification": {
+    "pde": "darcy",
+    "manifest_sha256": "3e8cf76ab52d2a026f3764d292886d94b18515b69856f6395cab179378b8a73a",
+    "verified_sha256": {
+      "train": "2ac93f9c0f8aa107e87a776ab0c565226592ea4872a397534d8feb30b419b4a7",
+      "validation": "d1ca001a8edf7029363772a5764693ddbad0dd944aaadfd7b5a5ca7c535c66aa",
+      "id": "2acd2de699f2982c2e365da3160788615542a7cdddae08ad16ded6d45d1abd7c",
+      "smooth": "bd8da863b3eb336afd0a84c08fffdd4c44d5fd1cbff2a9c1e2774b6f6e9d2bb1",
+      "rough": "eb7f4c78369e46c5bbdc40955d4b8e2efaac20a6db71c6c02d8d139d935e3aea"
+    },
+    "samples": {
+      "train": 45000,
+      "validation": 5000,
+      "id": 100,
+      "smooth": 100,
+      "rough": 100
+    }
+  },
+  "orchestration_revision": "8c31e07662703117f2197407a198cc57eb0c815e",
+  "official_revision": "d4e99d229c8698f75298042ba22b567ba5eeb45d",
+  "profiles": {
+    "1": {
+      "completed_epochs": 1,
+      "profile_only": true,
+      "elapsed_seconds": 15.497833552071825,
+      "peak_allocated_bytes": 9949424640,
+      "peak_reserved_bytes": 9978249216,
+      "exit_code": 0
+    },
+    "100": {
+      "completed_epochs": 1,
+      "profile_only": true,
+      "elapsed_seconds": 16.140710824984126,
+      "peak_allocated_bytes": 16901319680,
+      "peak_reserved_bytes": 23544725504,
+      "exit_code": 0
+    }
+  }
+}
