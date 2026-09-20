@@ -1,4 +1,4 @@
-"""Queue official four-PDE forward/inverse evaluation behind OFM and ECI-FM."""
+"""Evaluate each completed diffusion prior without a global training/evaluation barrier."""
 import argparse
 import fcntl
 import json
@@ -19,13 +19,6 @@ state = OUT / 'jobs' / f'diffusion_evaluation_v2_{a.worker}'
 state.mkdir(exist_ok=True)
 def status(message): (state / 'status').write_text(message + '\n')
 while True:
-    if any(not (OUT / 'jobs' / f'flow_{pde}' / 'training_completed').exists()
-           for pde in ('poisson', 'helmholtz', 'darcy', 'nsnonbounded', 'burger')):
-        status('Waiting for priority OFM training'); time.sleep(30); continue
-    done = sum(json.loads(p.read_text())['cases'] for p in
-               (OUT / 'evaluation_v2/fm4pde/eci').glob('*/*/*/shard_*/verified_summary.json'))
-    if done < 2700:
-        status(f'Waiting for priority ECI-FM evaluation: {done}/2700'); time.sleep(60); continue
     chosen = None
     matrix = json.loads((BASE / 'orchestration/configs/evaluation_matrix_v2.json').read_text())['evaluations']
     for r in matrix:
@@ -46,6 +39,12 @@ while True:
         time.sleep(60); continue
     gpu_lock = None
     for gpu in range(8):
+        busy = False
+        for pde in ('poisson', 'helmholtz', 'darcy', 'nsnonbounded', 'burger'):
+            flow = OUT / 'jobs' / f'flow_{pde}'
+            if (flow / 'gpu_index').exists() and not (flow / 'training_completed').exists():
+                busy |= (flow / 'gpu_index').read_text().strip() == str(gpu)
+        if busy: continue
         free = int(subprocess.check_output(['nvidia-smi', '-i', str(gpu), '--query-gpu=memory.free', '--format=csv,noheader,nounits']))
         if free < 40960 or os.getloadavg()[0] >= 110: continue
         candidate = (OUT / 'locks' / f'evaluation_gpu_{gpu}.lock').open('w')
