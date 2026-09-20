@@ -17,6 +17,7 @@ p.add_argument('--worker', type=int, required=True)
 p.add_argument('--gpu', type=int, help='Restrict worker to a measured resource allocation.')
 p.add_argument('--slot', type=int, default=0)
 p.add_argument('--method', choices=['ddis', 'fundps'])
+p.add_argument('--pde', choices=['poisson', 'helmholtz'])
 a = p.parse_args()
 state = OUT / 'jobs' / f'diffusion_evaluation_v2_{a.worker}'
 state.mkdir(exist_ok=True)
@@ -28,6 +29,7 @@ while True:
         if r['method'] not in ('ddis', 'fundps') or r['pde'] == 'burger':
             continue
         if a.method and r['method'] != a.method: continue
+        if a.pde and r['pde'] != a.pde: continue
         training = OUT / 'jobs' / f"{r['method']}_{r['pde']}"
         surrogate = OUT / 'jobs' / f"surrogate_{r['pde']}"
         if not (training / 'training_completed').exists(): continue
