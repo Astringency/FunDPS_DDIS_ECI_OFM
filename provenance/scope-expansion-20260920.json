@@ -1,5 +1,6 @@
 {
   "status": "authorized; implementation and formal results pending",
+  "evaluation_scope_confirmation": "User explicitly confirmed the same tasks and scale on 2026-09-20.",
   "priority": ["poisson", "helmholtz", "darcy", "nsnonbounded", "burger"],
   "groups": {
     "fm4pde_pretrained_prior": ["eci", "fm4pde"],

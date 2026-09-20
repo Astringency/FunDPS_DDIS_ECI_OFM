@@ -1,5 +1,6 @@
 official/
 staging/
+transfers/
 *.bundle
 provenance/*.log
 provenance/*.exit
