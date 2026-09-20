@@ -15,6 +15,8 @@ p = argparse.ArgumentParser()
 p.add_argument('--method', choices=['ddis', 'fundps'], required=True)
 p.add_argument('--pde', choices=['darcy', 'nsnonbounded', 'burger'], required=True)
 a = p.parse_args()
+if (OUT / 'jobs/diffusion_training_cancelled.json').exists():
+    raise SystemExit('DDIS/FunDPS training cancelled by user; explicit reauthorization required.')
 state = OUT / 'jobs' / f'{a.method}_{a.pde}'
 state.mkdir(exist_ok=True)
 def status(s):

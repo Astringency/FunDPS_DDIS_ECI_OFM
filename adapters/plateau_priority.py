@@ -92,11 +92,11 @@ def dependent_controllers(root, job, orchestration):
     return found
 
 
-def stop_validated_job(root, job, settings, orchestration, controllers=None):
+def stop_validated_job(root, job, settings, orchestration, controllers=None, user_requested=False):
     folder = root / 'jobs' / job
     state = folder / 'early_stopping'
     history, best, checkpoint = selection(state)
-    should_stop, bad = plateau(history, settings['jobs'][job], settings)
+    should_stop, bad = (True, None) if user_requested else plateau(history, settings['jobs'][job], settings)
     if not should_stop:
         raise ValueError('Checkpoint does not meet the authorized plateau policy')
     if (state / 'failure.json').exists() or (state / 'completed.json').exists():
@@ -108,10 +108,10 @@ def stop_validated_job(root, job, settings, orchestration, controllers=None):
     supervisor = identity(trainer['parent'])
     if not supervisor or str(state) not in supervisor['argv'] or not any(x.endswith('/early_stop.py') for x in supervisor['argv']):
         raise ValueError('Supervisor identity mismatch')
-    if trainer['state'] == 'T':
+    if trainer['state'] == 'T' and not user_requested:
         return None
     controllers = dependent_controllers(root, job, orchestration) if controllers is None else controllers
-    audit = state / 'manual_plateau_stop'
+    audit = state / ('user_requested_stop' if user_requested else 'manual_plateau_stop')
     audit.mkdir(exist_ok=False)
     write_json(audit / 'intent.json', {'created_utc': datetime.now(timezone.utc).isoformat(),
         'reason': settings['reason'], 'policy': settings, 'latest_validation': history[-1],
@@ -140,7 +140,7 @@ def stop_validated_job(root, job, settings, orchestration, controllers=None):
         with checkpoint.open('rb') as handle:
             for block in iter(lambda: handle.read(8 << 20), b''):
                 digest.update(block)
-        completion = {'reason': 'user_requested_validation_plateau',
+        completion = {'reason': 'user_requested_stop' if user_requested else 'user_requested_validation_plateau',
             'trainer_returncode': failure['trainer_returncode'], 'selected_checkpoint': best,
             'validation_checks': len(history), 'checkpoint_sha256': digest.hexdigest(),
             'manual_stop_audit': str(audit), 'policy': settings}
@@ -149,7 +149,7 @@ def stop_validated_job(root, job, settings, orchestration, controllers=None):
         # Original logs and the outer shell's actual .exit code are not changed.
         (state / 'failure.json').rename(audit / 'supervisor_signal_exit.json')
         write_json(state / 'completed.json', completion)
-        (folder / 'status').write_text('User-authorized validation plateau stop; best checkpoint selected\n')
+        (folder / 'status').write_text(('User-requested stop' if user_requested else 'User-authorized validation plateau stop') + '; best checkpoint selected\n')
         (folder / 'training_completed').write_text(datetime.now(timezone.utc).isoformat() + '\n')
         return completion
     finally:

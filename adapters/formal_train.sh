@@ -8,6 +8,10 @@ task_min_free=$4
 case "$pde" in poisson|helmholtz|darcy|nsnonbounded) ;; *) exit 2;; esac
 task_base=/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919
 task_out=/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919
+if test "$method" != flow && test -f "$task_out/jobs/diffusion_training_cancelled.json"; then
+    echo 'DDIS/FunDPS and auxiliary training cancelled by user.' >&2
+    exit 2
+fi
 task_state=$task_out/jobs/${method}_${pde}
 mkdir -p "$task_state" "$task_out/locks"
 task_training_meta=$task_out/data/preprocessing/train/data/DiffPDE/${pde}_hf/metadata.json
