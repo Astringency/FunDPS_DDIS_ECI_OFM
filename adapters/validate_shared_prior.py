@@ -49,14 +49,17 @@ def validate(output):
     target = torch.load(source, map_location='cpu', weights_only=False)['ground_truth']['pair'].numpy().astype(np.float64)
     channels = target.shape[1]
     rng = np.random.RandomState(run['seed'])
-    expected_masks = []
+    expected_coefficient, expected_masks = [], []
     for _ in range(100):
-        rng.choice(16384, 500, replace=False)
+        expected_coefficient.append(rng.choice(16384, 500, replace=False))
         expected_masks.append(rng.choice(16384, 500, replace=False))
     masks = np.load(output / 'solution_observation_indices.npy')
     np.testing.assert_array_equal(masks, np.stack(expected_masks))
-    ids = list(range(run['offset'], run['offset'] + run['count']))
-    assert sorted(int(path.stem.split('_')[1]) for path in output.glob('case_*.json')) == ids
+    coefficient_path = output / 'coefficient_observation_indices.npy'
+    if coefficient_path.exists():
+        np.testing.assert_array_equal(np.load(coefficient_path), np.stack(expected_coefficient))
+    ids = run.get('case_indices') or list(range(run['offset'], run['offset'] + run['count']))
+    assert sorted(int(path.stem.split('_')[1]) for path in output.glob('case_*.json')) == sorted(ids)
     records = []
     for index in ids:
         record = json.loads((output / f'case_{index:03d}.json').read_text())
@@ -77,7 +80,8 @@ def validate(output):
                 assert record['relative_l2_coefficient'] is None
         records.append(record)
     success = [record for record in records if record['status'] == 'ok']
-    result = {'prior': run['prior'], 'method': run['method'], 'pde': run['pde'], 'split': run['split'],
+    result = {'prior': run['prior'], 'method': run['method'], 'pde': run['pde'],
+        'split': run['split'], 'task': run['task'],
         'profile_only': run['profile'], 'cases': len(records), 'successes': len(success),
         'failures': len(records) - len(success), 'sample_ids': ids,
         'checkpoint_sha256': run['checkpoint_sha256'], 'truth_sha256': run['truth_sha256'],

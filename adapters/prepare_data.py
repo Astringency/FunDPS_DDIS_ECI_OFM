@@ -183,7 +183,7 @@ if __name__ == "__main__":
     p.set_defaults(func=export)
     p = sub.add_parser("hf")
     p.add_argument("--source", type=Path, required=True)
-    p.add_argument("--split", choices=["train", "validation", "id", "smooth", "rough"], required=True)
+    p.add_argument("--split", choices=["train", "validation", "id", "smooth", "rough", "rough2", "rough3"], required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--cache", type=Path, required=True)
     p.set_defaults(func=make_hf)

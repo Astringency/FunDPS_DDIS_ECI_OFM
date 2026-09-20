@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import numpy as np
 import torch
 
-from evaluate_flow import observation_indices, ofm_sample
+from evaluate_flow import pair_observation_indices, ofm_sample
 from shared_prior_runtime import (ECIVelocityAdapter, case_ground_truth, common_masks,
     load_eci, load_prior, native_model_extra, native_noise_provider)
 
@@ -36,6 +36,9 @@ def main(args):
         raise ValueError('OFM regression is only configured for the operator prior group')
     if not 0 <= args.offset < 100 or not 1 <= args.count <= 100 - args.offset:
         raise ValueError('Evaluation IDs must be contained in 0 through 99')
+    indices = args.case_indices if args.case_indices is not None else list(range(args.offset, args.offset + args.count))
+    if len(indices) != args.count or len(set(indices)) != len(indices) or any(not 0 <= index < 100 for index in indices):
+        raise ValueError('Case indices must be unique, within 0 through 99, and match count')
     if not args.profile and (args.eci_steps != 800 or args.eci_mix != 5 or args.langevin_steps != 100 or args.fm_steps != 100):
         raise ValueError('Reduced schedules are reserved for explicitly marked profiles')
     sys.path.insert(0, str(args.fm4pde))
@@ -72,6 +75,7 @@ def main(args):
                                    data.numpy(), rtol=1e-5, atol=1e-5)
     args.output.mkdir(parents=True, exist_ok=True)
     config_record = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
+    task = args.task or assets['task']
     config_record.update(checkpoint_sha256=checkpoint_digest,
         truth_sha256=assets['splits'][args.split]['sha256'],
         assets_manifest_sha256=sha256(args.assets / 'manifest.json'),
@@ -79,7 +83,7 @@ def main(args):
         runtime={'python': sys.version, 'torch': torch.__version__, 'cuda': torch.version.cuda,
                  **{name: importlib.metadata.version(name) for name in ('neuraloperator', 'torchcfm', 'gpytorch', 'torchdiffeq')}},
         fm4pde_revision=assets_manifest['fm4pde_revision'],
-        task=assets['task'], observations=500, observation_noise=0,
+        task=task, observations=500, observation_noise=0,
         noise_family='iid_standard_Gaussian' if args.prior == 'fm4pde' else 'official_OFM_Matern_GP',
         protocol='native main FM4PDE config; ECI 800x5; OFM Langevin 100; identical observations',
         fm4pde_noise_adapter='initial and stochastic bridge provider' if args.prior == 'ofm' else None)
@@ -87,7 +91,9 @@ def main(args):
     if run_path.exists() and json.loads(run_path.read_text()) != config_record:
         raise ValueError('Output directory already belongs to a different configuration')
     atomic_json(run_path, config_record)
-    np.save(args.output / 'solution_observation_indices.npy', observation_indices(args.seed))
+    coefficient_indices, solution_indices = pair_observation_indices(args.seed)
+    np.save(args.output / 'coefficient_observation_indices.npy', coefficient_indices)
+    np.save(args.output / 'solution_observation_indices.npy', solution_indices)
     torch.manual_seed(args.seed)
     if args.device.startswith('cuda'):
         torch.cuda.reset_peak_memory_stats()
@@ -99,14 +105,14 @@ def main(args):
         'peak_reserved_bytes': torch.cuda.max_memory_reserved() if args.device.startswith('cuda') else None,
         'normalizer': {key: value.tolist() if isinstance(value, torch.Tensor) else value
                        for key, value in normalizer.state_dict().items()}})
-    for index in range(args.offset, args.offset + args.count):
+    for index in indices:
         result_path = args.output / f'case_{index:03d}.json'
         if result_path.exists():
             continue
         torch.manual_seed(args.seed + index)
         truth = case_ground_truth(saved['ground_truth'], index, args.device)
-        masks, _ = common_masks(truth, index, args.seed)
-        config = load_config(args.fm4pde / 'configs/main' / assets['task'] / f'{args.pde}.yaml', {
+        masks, _ = common_masks(truth, index, args.seed, task if args.pde != 'burger' else 'inverse')
+        config = load_config(args.fm4pde / 'configs/main' / task / f'{args.pde}.yaml', {
             'test_type': args.split, 'data_path': assets['splits'][args.split]['source_file'],
             'checkpoint_path': str(args.checkpoint), 'output_dir': str(args.output / f'native_{index:03d}'),
             'batch_size': 1, 'offset': index, 'device': args.device, 'model_profile': 'auto',
@@ -133,8 +139,7 @@ def main(args):
                 record['pde_residual_status'] = result['pde_residual_status']
             else:
                 standardized = normalizer.transform(truth.pair)
-                mask = torch.zeros_like(standardized, dtype=torch.bool)
-                mask[:, -1:] = masks.sol.bool()
+                mask = torch.cat((masks.coef.bool(), masks.sol.bool()), dim=1) if channels == 2 else masks.sol.bool()
                 if args.method == 'eci':
                     extra = native_model_extra(payload, truth, config)
                     eci = SimpleNamespace(model=ECIVelocityAdapter(net, extra), gp=noise)
@@ -184,7 +189,9 @@ if __name__ == '__main__':
     for name in ('fm4pde', 'ofm', 'eci', 'checkpoint', 'assets', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--source', type=Path)
-    parser.add_argument('--split', choices=['id', 'smooth', 'rough'], required=True)
+    parser.add_argument('--split', choices=['id', 'smooth', 'rough', 'rough2', 'rough3'], required=True)
+    parser.add_argument('--task', choices=['forward', 'both', 'inverse'])
+    parser.add_argument('--case-indices', nargs='+', type=int)
     parser.add_argument('--offset', type=int, default=0)
     parser.add_argument('--count', type=int, default=100)
     parser.add_argument('--seed', type=int, default=0)

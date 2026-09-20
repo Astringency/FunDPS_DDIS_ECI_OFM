@@ -13,15 +13,19 @@ import torch
 from train_flow import build_prior
 
 
-def observation_indices(seed, count=100):
+def pair_observation_indices(seed, count=100):
     # Match official DDIS/FunDPS SparseObservation with [500, 500], batch=1:
     # the inactive coefficient channel still consumes the first RNG draw.
     rng = np.random.RandomState(seed)
-    indices = []
+    coefficient, solution = [], []
     for _ in range(count):
-        rng.choice(128 * 128, 500, replace=False)
-        indices.append(rng.choice(128 * 128, 500, replace=False))
-    return np.stack(indices)
+        coefficient.append(rng.choice(128 * 128, 500, replace=False))
+        solution.append(rng.choice(128 * 128, 500, replace=False))
+    return np.stack(coefficient), np.stack(solution)
+
+
+def observation_indices(seed, count=100):
+    return pair_observation_indices(seed, count)[1]
 
 
 class ECIPriorShapeAdapter:

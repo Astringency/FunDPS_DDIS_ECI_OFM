@@ -19,15 +19,21 @@ def verify(output, source, split, count):
     ids = np.load(source / f"{split}_ids.npy")
     assert np.array_equal(ids, np.arange(100))
     masks = np.load(output / "solution_observation_indices.npy")
+    coefficient_path = output / "coefficient_observation_indices.npy"
+    coefficient_masks = np.load(coefficient_path) if coefficient_path.exists() else None
     rng = np.random.RandomState(0)
     for index in range(100):
-        rng.choice(128 * 128, 500, replace=False)
+        expected_coefficient = rng.choice(128 * 128, 500, replace=False)
+        if coefficient_masks is not None:
+            assert np.array_equal(coefficient_masks[index], expected_coefficient)
         assert np.array_equal(masks[index], rng.choice(128 * 128, 500, replace=False))
     assert len(list(output.glob("case_*.json"))) == count
     means = np.asarray(manifest["stats"]["mean"])[None, :, None, None]
     scales = np.asarray(manifest["stats"]["std"])[None, :, None, None] / 0.5
     errors, failed = [], []
-    for index in range(count):
+    selected = run.get('case_index')
+    case_indices = [selected] if selected is not None else list(range(count))
+    for index in case_indices:
         record = json.loads((output / f"case_{index:03d}.json").read_text())
         assert record["sample_id"] == int(ids[index])
         if record["status"] == "failed":
@@ -46,7 +52,8 @@ def verify(output, source, split, count):
     values = np.asarray(errors)
     summary = {"verified_cases": count, "successful_cases": len(errors), "failed_cases": failed,
                "failure_rate": len(failed) / count, "relative_error_units": "ratio; uncapped",
-               "source": str(source), "split": split,
+               "source": str(source), "split": split, "task": run.get('task', 'inverse'),
+               "sample_ids": case_indices,
                "mean_relative_l2_all_cases": values.mean(0).tolist() if not failed else None,
                "mean_relative_l2_successful_cases": values.mean(0).tolist() if errors else None,
                "median_relative_l2_successful_cases": np.median(values, axis=0).tolist() if errors else None,
@@ -60,7 +67,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--split", choices=["id", "smooth", "rough"], required=True)
+    parser.add_argument("--split", choices=["id", "smooth", "rough", "rough2", "rough3"], required=True)
     parser.add_argument("--count", type=int, choices=[1, 100], default=100)
     args = parser.parse_args()
     verify(args.output, args.source, args.split, args.count)

@@ -10,7 +10,7 @@ import types
 import numpy as np
 import torch
 
-from evaluate_flow import observation_indices
+from evaluate_flow import pair_observation_indices
 from train_flow import build_prior
 
 
@@ -105,16 +105,24 @@ def case_ground_truth(saved, index, device):
     return PDEGroundTruth(**values)
 
 
-def common_masks(truth, index, seed=0):
+def common_masks(truth, index, seed=0, task='inverse'):
     from sampling.masks import PairMasks
-    indices = observation_indices(seed)[index]
-    mask = torch.zeros_like(truth.sol)
-    mask.reshape(-1)[torch.as_tensor(indices, device=mask.device)] = 1
-    assert int(mask.sum()) == 500
-    return PairMasks(torch.zeros_like(truth.coef), mask,
-        {'num_obs': 500, 'active_observations': 500, 'active_channel': 'solution',
+    coefficient_indices, solution_indices = pair_observation_indices(seed)
+    coefficient = torch.zeros_like(truth.coef)
+    solution = torch.zeros_like(truth.sol)
+    if task in ('forward', 'both'):
+        coefficient.reshape(-1)[torch.as_tensor(coefficient_indices[index], device=coefficient.device)] = 1
+    if task in ('inverse', 'both'):
+        solution.reshape(-1)[torch.as_tensor(solution_indices[index], device=solution.device)] = 1
+    if task not in ('forward', 'both', 'inverse'):
+        raise ValueError(f'Unknown task: {task}')
+    assert int(coefficient.sum()) == (500 if task in ('forward', 'both') else 0)
+    assert int(solution.sum()) == (500 if task in ('inverse', 'both') else 0)
+    return PairMasks(coefficient, solution,
+        {'num_obs': 500, 'active_observations': int(coefficient.sum() + solution.sum()),
+         'active_channel': task,
          'sensor_mode': 'common_ddis_random', 'mask_seed': seed, 'sample_id': index,
-         'shared_across_methods_and_priors': True}), indices
+         'shared_across_methods_and_priors': True}), solution_indices[index]
 
 
 def native_model_extra(payload, truth, config):
