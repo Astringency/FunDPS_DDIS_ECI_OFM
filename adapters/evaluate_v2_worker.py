@@ -14,14 +14,17 @@ AD = BASE / 'orchestration/adapters'
 PY = BASE / 'venv-shared-prior/bin/python'
 p = argparse.ArgumentParser()
 p.add_argument('--gpu', type=int, required=True)
+p.add_argument('--slot', type=int, default=0, help='Additional concurrent process slot after memory profiling.')
 p.add_argument('--eci-ofm-only', action='store_true', help='Run ECI with completed OFM priors alongside the ECI-FM queue.')
 p.add_argument('--fm-ofm-only', action='store_true', help='Run FM4PDE with completed, calibrated OFM priors.')
+p.add_argument('--ofm-only', action='store_true', help='Run official OFM sampling as soon as its prior completes.')
 a = p.parse_args()
 ROOT.mkdir(exist_ok=True)
 matrix = json.loads((BASE / 'orchestration/configs/evaluation_matrix_v2.json').read_text())
 matrix = [r for r in matrix['evaluations'] if r['prior'] in ('fm4pde', 'ofm')]
 os.environ.update(CUDA_VISIBLE_DEVICES=str(a.gpu), OMP_NUM_THREADS='4', OPENBLAS_NUM_THREADS='4', MPLBACKEND='Agg')
-lock = (OUT / 'locks' / f'evaluation_gpu_{a.gpu}.lock').open('w')
+suffix = f'_slot_{a.slot}' if a.slot else ''
+lock = (OUT / 'locks' / f'evaluation_gpu_{a.gpu}{suffix}.lock').open('w')
 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 def run(cmd, logfile):
     with logfile.open('w') as f:
@@ -33,6 +36,8 @@ while True:
         matrix = [r for r in matrix if (r['prior'], r['method']) == ('ofm', 'eci')]
     if a.fm_ofm_only:
         matrix = [r for r in matrix if (r['prior'], r['method']) == ('ofm', 'fm4pde')]
+    if a.ofm_only:
+        matrix = [r for r in matrix if (r['prior'], r['method']) == ('ofm', 'ofm')]
     busy = False
     for q in ('poisson', 'helmholtz', 'darcy', 'nsnonbounded', 'burger'):
         state = OUT / 'jobs' / f'flow_{q}'

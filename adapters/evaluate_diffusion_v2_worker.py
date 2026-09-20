@@ -14,6 +14,9 @@ AD = BASE / 'orchestration/adapters'
 PY = BASE / 'venv/bin/python'
 p = argparse.ArgumentParser()
 p.add_argument('--worker', type=int, required=True)
+p.add_argument('--gpu', type=int, help='Restrict worker to a measured resource allocation.')
+p.add_argument('--slot', type=int, default=0)
+p.add_argument('--method', choices=['ddis', 'fundps'])
 a = p.parse_args()
 state = OUT / 'jobs' / f'diffusion_evaluation_v2_{a.worker}'
 state.mkdir(exist_ok=True)
@@ -24,6 +27,7 @@ while True:
     for r in matrix:
         if r['method'] not in ('ddis', 'fundps') or r['pde'] == 'burger':
             continue
+        if a.method and r['method'] != a.method: continue
         training = OUT / 'jobs' / f"{r['method']}_{r['pde']}"
         surrogate = OUT / 'jobs' / f"surrogate_{r['pde']}"
         if not (training / 'training_completed').exists(): continue
@@ -38,7 +42,7 @@ while True:
         status('Waiting for additional trained priors or all requested cases already claimed')
         time.sleep(60); continue
     gpu_lock = None
-    for gpu in range(8):
+    for gpu in ([a.gpu] if a.gpu is not None else range(8)):
         busy = False
         for pde in ('poisson', 'helmholtz', 'darcy', 'nsnonbounded', 'burger'):
             flow = OUT / 'jobs' / f'flow_{pde}'
@@ -46,8 +50,11 @@ while True:
                 busy |= (flow / 'gpu_index').read_text().strip() == str(gpu)
         if busy: continue
         free = int(subprocess.check_output(['nvidia-smi', '-i', str(gpu), '--query-gpu=memory.free', '--format=csv,noheader,nounits']))
-        if free < 40960 or os.getloadavg()[0] >= 110: continue
-        candidate = (OUT / 'locks' / f'evaluation_gpu_{gpu}.lock').open('w')
+        # Official full-schedule batch-one profiles measured <5 GiB for both
+        # available two-channel priors; retain at least 15 GiB extra headroom.
+        if free < 20480 or os.getloadavg()[0] >= 110: continue
+        suffix = f'_slot_{a.slot}' if a.slot else ''
+        candidate = (OUT / 'locks' / f'evaluation_gpu_{gpu}{suffix}.lock').open('w')
         try: fcntl.flock(candidate, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             candidate.close(); continue
