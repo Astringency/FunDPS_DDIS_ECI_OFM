@@ -1,0 +1,616 @@
+{
+  "cases_per_split": 100,
+  "observations": 500,
+  "noise": 0,
+  "evaluations": [
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "poisson",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "poisson",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "poisson",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "helmholtz",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "helmholtz",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "helmholtz",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "darcy",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "darcy",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "darcy",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "nsnonbounded",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "nsnonbounded",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "nsnonbounded",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "burger",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "burger",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "eci",
+      "pde": "burger",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "poisson",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "poisson",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "poisson",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "helmholtz",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "helmholtz",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "helmholtz",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "darcy",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "darcy",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "darcy",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "nsnonbounded",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "nsnonbounded",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "nsnonbounded",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "burger",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "burger",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "fm4pde",
+      "method": "fm4pde",
+      "pde": "burger",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "poisson",
+      "split": "id",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "poisson",
+      "split": "smooth",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "poisson",
+      "split": "rough",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "helmholtz",
+      "split": "id",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "helmholtz",
+      "split": "smooth",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "helmholtz",
+      "split": "rough",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "darcy",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "darcy",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "darcy",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "nsnonbounded",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "nsnonbounded",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "nsnonbounded",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "burger",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "burger",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "eci",
+      "pde": "burger",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "poisson",
+      "split": "id",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "poisson",
+      "split": "smooth",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "poisson",
+      "split": "rough",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "helmholtz",
+      "split": "id",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "helmholtz",
+      "split": "smooth",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "helmholtz",
+      "split": "rough",
+      "existing_controller": true
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "darcy",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "darcy",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "darcy",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "nsnonbounded",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "nsnonbounded",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "nsnonbounded",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "burger",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "burger",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "ofm",
+      "pde": "burger",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "poisson",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "poisson",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "poisson",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "helmholtz",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "helmholtz",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "helmholtz",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "darcy",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "darcy",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "darcy",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "nsnonbounded",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "nsnonbounded",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "nsnonbounded",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "burger",
+      "split": "id",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "burger",
+      "split": "smooth",
+      "existing_controller": false
+    },
+    {
+      "prior": "ofm",
+      "method": "fm4pde",
+      "pde": "burger",
+      "split": "rough",
+      "existing_controller": false
+    },
+    {
+      "prior": "ddis",
+      "method": "ddis",
+      "pde": "poisson",
+      "split": "id",
+      "existing_controller": true
+    },
+    {
+      "prior": "ddis",
+      "method": "ddis",
+      "pde": "poisson",
+      "split": "smooth",
+      "existing_controller": true
+    },
+    {
+      "prior": "ddis",
+      "method": "ddis",
+      "pde": "poisson",
+      "split": "rough",
+      "existing_controller": true
+    },
+    {
+      "prior": "ddis",
+      "method": "ddis",
+      "pde": "helmholtz",
+      "split": "id",
+      "existing_controller": true
+    },
+    {
+      "prior": "ddis",
+      "method": "ddis",
+      "pde": "helmholtz",
+      "split": "smooth",
+      "existing_controller": true
+    },
+    {
+      "prior": "ddis",
+      "method": "ddis",
+      "pde": "helmholtz",
+      "split": "rough",
+      "existing_controller": true
+    },
+    {
+      "prior": "fundps",
+      "method": "fundps",
+      "pde": "poisson",
+      "split": "id",
+      "existing_controller": true
+    },
+    {
+      "prior": "fundps",
+      "method": "fundps",
+      "pde": "poisson",
+      "split": "smooth",
+      "existing_controller": true
+    },
+    {
+      "prior": "fundps",
+      "method": "fundps",
+      "pde": "poisson",
+      "split": "rough",
+      "existing_controller": true
+    },
+    {
+      "prior": "fundps",
+      "method": "fundps",
+      "pde": "helmholtz",
+      "split": "id",
+      "existing_controller": true
+    },
+    {
+      "prior": "fundps",
+      "method": "fundps",
+      "pde": "helmholtz",
+      "split": "smooth",
+      "existing_controller": true
+    },
+    {
+      "prior": "fundps",
+      "method": "fundps",
+      "pde": "helmholtz",
+      "split": "rough",
+      "existing_controller": true
+    }
+  ]
+}

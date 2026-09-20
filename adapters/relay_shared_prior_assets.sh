@@ -14,3 +14,5 @@ rsync -aL --partial --append-verify "server197:$task_source/shared_prior_assets/
 ssh -S /tmp/ddis216-recovered-20260919 server216 "mkdir -p $task_out/data/shared_prior_assets"
 rsync -a --partial --append-verify -e 'ssh -S /tmp/ddis216-recovered-20260919' \
     "$task_stage/" "server216:$task_out/data/shared_prior_assets/"
+ssh -S /tmp/ddis216-recovered-20260919 server216 \
+    "/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919/venv/bin/python /data1/zjinzxf2025/C01Python/DDIS_comparison_20260919/orchestration/adapters/validate_shared_prior.py --assets $task_out/data/shared_prior_assets"
