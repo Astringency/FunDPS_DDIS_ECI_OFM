@@ -4,12 +4,15 @@ set -euo pipefail
 task_base=/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919
 task_out=/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919
 task_env=$task_base/venv-shared-prior
-test ! -e "$task_env"
-/data1/zjinzxf2025/miniconda3/envs/fm4pde/bin/python -m venv --system-site-packages "$task_env"
+if ! test -e "$task_env"; then
+    /data1/zjinzxf2025/miniconda3/envs/fm4pde/bin/python -m venv --system-site-packages "$task_env"
+fi
+test -f "$task_env/pyvenv.cfg"
+export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 # These official packages expose optional dependencies not used by this task.
 # Install their exact sources without downgrading the inherited Torch/NumPy;
 # the exercised FNO, GP and exact-OT paths are checked below and in GPU probes.
-"$task_env/bin/python" -m pip install --no-deps neuraloperator==0.3.0 torch-harmonics==0.7.2 torchcfm==1.0.5
+"$task_env/bin/python" -m pip install --no-deps --no-build-isolation neuraloperator==0.3.0 torch-harmonics==0.7.2 torchcfm==1.0.5
 "$task_env/bin/python" -m pip install gpytorch==1.13 tensorly==0.9.0 tensorly-torch==0.5.0 \
     opt-einsum==3.4.0 configmypy==0.2.0 pot==0.9.6.post1 torchdiffeq==0.2.4 wandb==0.19.8
 "$task_env/bin/python" -m pip freeze > "$task_out/setup/shared-prior-runtime-freeze.txt"
