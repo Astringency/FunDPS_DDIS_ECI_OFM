@@ -62,7 +62,7 @@ def main(args):
                                              active if task in ('inverse', 'both') else 0,
                                              weights[2]]
     metadata = json.loads((args.source / "manifest.json").read_text())
-    assert metadata["name"] == config["dataset"]
+    assert metadata["name"].replace("-", "") == config["dataset"].replace("-", "")
     ids = np.load(args.source / f"{args.split}_ids.npy")
     assert np.array_equal(ids, np.arange(100))
     truth = np.load(args.source / f"{args.split}.npy", mmap_mode="r")
@@ -73,6 +73,10 @@ def main(args):
               "task": task, "case_index": args.case_index,
               "source": str(args.source), "official_config": config,
               "checkpoint_sha256": file_hash(args.checkpoint), "profile_only": args.profile}
+    if metadata['name'] == 'darcy':
+        if args.fm4pde is None:
+            raise ValueError('FM4PDE Darcy data requires its 4/12 coefficient postprocessing')
+        record['physical_postprocessing'] = 'FM4PDE official Darcy binary 4/12 mapping; upstream DDIS/FunDPS defaults target a different 3/12 dataset'
     if args.surrogate is not None:
         record["surrogate_sha256"] = file_hash(args.surrogate)
     (args.output / "run.json").write_text(json.dumps(record, indent=2) + "\n")
@@ -89,6 +93,17 @@ def main(args):
     torch.cuda.reset_peak_memory_stats()
     start = time.monotonic()
     solver = Solver(Config(config))
+    if metadata['name'] == 'darcy':
+        sys.path.insert(0, str(args.fm4pde))
+        from sampling.pde_residuals import _apply_darcy_coef_positive
+        original_load = solver.load_data
+        def load_aligned_data():
+            original_load()
+            def transform(x):
+                return torch.cat((_apply_darcy_coef_positive(x[:, :1],
+                    {'coef_positive_mode': 'binary'}), x[:, 1:]), dim=1)
+            solver.normalizer._transform = transform
+        solver.load_data = load_aligned_data
     if selected:
         for _ in range(args.case_index):
             np.random.choice(128 * 128, 500, replace=False)
@@ -133,6 +148,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--surrogate", type=Path)
+    parser.add_argument("--fm4pde", type=Path)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--split", choices=["id", "smooth", "rough", "rough2", "rough3"], required=True)
     parser.add_argument("--task", choices=["forward", "both", "inverse"])
