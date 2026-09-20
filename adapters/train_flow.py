@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader, Dataset
 class NpyFields(Dataset):
     def __init__(self, path, resolution=128, limit=None):
         self.array = np.load(path, mmap_mode="r")
-        assert self.array.ndim == 4 and self.array.shape[1:] == (2, 128, 128)
+        assert self.array.ndim == 4 and self.array.shape[1] in (1, 2) and self.array.shape[2:] == (128, 128)
         assert 128 % resolution == 0
         self.stride = 128 // resolution
         self.count = len(self.array) if limit is None else min(limit, len(self.array))
@@ -46,9 +46,9 @@ def official_ofm(repo):
     return module.FNO, OFMModel
 
 
-def build_prior(repo, resolution, device):
+def build_prior(repo, resolution, device, channels=2):
     FNO, OFMModel = official_ofm(repo)
-    model = FNO(modes=32, vis_channels=2, hidden_channels=128,
+    model = FNO(modes=32, vis_channels=channels, hidden_channels=128,
                 proj_channels=128, x_dim=2).to(device)
     prior = OFMModel(model, kernel_length=0.01, kernel_variance=1.0,
                      nu=0.5, sigma_min=1e-4, device=device,
@@ -77,7 +77,7 @@ def main(args):
     if args.device.startswith("cuda"):
         torch.cuda.reset_peak_memory_stats()
     start = time.monotonic()
-    model, prior = build_prior(args.ofm, args.resolution, args.device)
+    model, prior = build_prior(args.ofm, args.resolution, args.device, channels=train.array.shape[1])
     print(f"Parameters: {sum(p.numel() for p in model.parameters())}", flush=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.8)
