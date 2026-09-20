@@ -178,7 +178,9 @@ def main():
              'The previous FM4PDE errors select cases only. All seven new samplings use the same',
              '500 noiseless observations per active field and selected checkpoints during training.',
              'DDIS/FunDPS task-specific channel weights mirror their inverse setting; no tuning was done.',
-             'These two-case diagnostics do not estimate population-level ranking.', '',
+             'Good/poor means lowest/highest historical error within each task/split, not an',
+             'absolute quality threshold. These two-case diagnostics do not estimate',
+             'population-level ranking.', '',
              '| Method/task | Paired cases | Better than FM4PDE ordinary prior/native |',
              '|---|---:|---:|']
     for key, value in comparisons.items():
