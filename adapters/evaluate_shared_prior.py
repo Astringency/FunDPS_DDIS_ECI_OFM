@@ -1,0 +1,184 @@
+"""Evaluate official samplers on a pinned ordinary FM or operator FM prior."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import sys
+import time
+from types import SimpleNamespace
+
+import numpy as np
+import torch
+
+from evaluate_flow import observation_indices, ofm_sample
+from shared_prior_runtime import (ECIVelocityAdapter, case_ground_truth, common_masks,
+    load_eci, load_prior, native_model_extra, native_noise_provider)
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with path.open('rb') as handle:
+        for block in iter(lambda: handle.read(8 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def atomic_json(path, value):
+    temporary = path.with_suffix('.partial.json')
+    temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + '\n')
+    temporary.replace(path)
+
+
+def main(args):
+    if args.method == 'ofm' and args.prior != 'ofm':
+        raise ValueError('OFM regression is only configured for the operator prior group')
+    if not 0 <= args.offset < 100 or not 1 <= args.count <= 100 - args.offset:
+        raise ValueError('Evaluation IDs must be contained in 0 through 99')
+    if not args.profile and (args.eci_steps != 800 or args.eci_mix != 5 or args.langevin_steps != 100 or args.fm_steps != 100):
+        raise ValueError('Reduced schedules are reserved for explicitly marked profiles')
+    sys.path.insert(0, str(args.fm4pde))
+    from sampling.config import load_config
+    from sampling.runner import run_single_ablation
+
+    assets_manifest = json.loads((args.assets / 'manifest.json').read_text())
+    assets = assets_manifest['pdes'][args.pde]
+    truth_path = args.assets / assets['splits'][args.split]['file']
+    assert sha256(truth_path) == assets['splits'][args.split]['sha256']
+    saved = torch.load(truth_path, map_location='cpu', weights_only=False)
+    data = saved['ground_truth']['pair']
+    channels = 1 if args.pde == 'burger' else 2
+    assert tuple(data.shape) == (100, channels, 128, 128)
+    assert saved['ground_truth']['metadata']['sample_offsets'] == list(range(100))
+    checkpoint_digest = sha256(args.checkpoint)
+    if args.prior == 'fm4pde':
+        assert checkpoint_digest == assets['checkpoint_sha256']
+    else:
+        source_manifest = json.loads((args.source / 'manifest.json').read_text())
+        compact = np.load(args.source / f'{args.split}.npy', mmap_mode='r')
+        assert compact.shape == tuple(data.shape)
+        assert np.array_equal(np.load(args.source / f'{args.split}_ids.npy'), np.arange(100))
+        mean = np.array(source_manifest['stats']['mean'])[None, :, None, None]
+        scale = np.array(source_manifest['stats']['std'])[None, :, None, None] / 0.5
+        np.testing.assert_allclose(np.asarray(compact, dtype=np.float64) * scale + mean,
+                                   data.numpy(), rtol=1e-5, atol=1e-5)
+    args.output.mkdir(parents=True, exist_ok=True)
+    config_record = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
+    config_record.update(checkpoint_sha256=checkpoint_digest,
+        truth_sha256=assets['splits'][args.split]['sha256'],
+        assets_manifest_sha256=sha256(args.assets / 'manifest.json'),
+        fm4pde_revision=assets_manifest['fm4pde_revision'],
+        task=assets['task'], observations=500, observation_noise=0,
+        noise_family='iid_standard_Gaussian' if args.prior == 'fm4pde' else 'official_OFM_Matern_GP',
+        protocol='native main FM4PDE config; ECI 800x5; OFM Langevin 100; identical observations',
+        fm4pde_noise_adapter='initial and stochastic bridge provider' if args.prior == 'ofm' else None)
+    run_path = args.output / 'run.json'
+    if run_path.exists() and json.loads(run_path.read_text()) != config_record:
+        raise ValueError('Output directory already belongs to a different configuration')
+    atomic_json(run_path, config_record)
+    np.save(args.output / 'solution_observation_indices.npy', observation_indices(args.seed))
+    torch.manual_seed(args.seed)
+    if args.device.startswith('cuda'):
+        torch.cuda.reset_peak_memory_stats()
+    net, normalizer, payload, noise, operator_prior = load_prior(args, channels)
+    if args.method == 'eci':
+        FFM, DirichletCondition = load_eci(args.eci)
+    atomic_json(args.output / 'model_loaded.json', {
+        'selected_inference_weight': payload.get('selected_inference_weight'),
+        'peak_reserved_bytes': torch.cuda.max_memory_reserved() if args.device.startswith('cuda') else None,
+        'normalizer': {key: value.tolist() if isinstance(value, torch.Tensor) else value
+                       for key, value in normalizer.state_dict().items()}})
+    for index in range(args.offset, args.offset + args.count):
+        result_path = args.output / f'case_{index:03d}.json'
+        if result_path.exists():
+            continue
+        torch.manual_seed(args.seed + index)
+        truth = case_ground_truth(saved['ground_truth'], index, args.device)
+        masks, _ = common_masks(truth, index, args.seed)
+        config = load_config(args.fm4pde / 'configs/main' / assets['task'] / f'{args.pde}.yaml', {
+            'test_type': args.split, 'data_path': assets['splits'][args.split]['source_file'],
+            'checkpoint_path': str(args.checkpoint), 'output_dir': str(args.output / f'native_{index:03d}'),
+            'batch_size': 1, 'offset': index, 'device': args.device, 'model_profile': 'auto',
+            'sample_seed': args.seed + index, 'mask_seed': args.seed, 'noise_level': 0.0,
+            'num_steps': args.fm_steps, 'save_plots': False})
+        config.runtime_metadata.update(shared_prior_comparison=config_record,
+            common_observation_indices_file=str(args.output / 'solution_observation_indices.npy'))
+        start = time.monotonic()
+        if args.device.startswith('cuda'):
+            torch.cuda.reset_peak_memory_stats()
+        record = {'sample_id': index, 'status': 'ok', 'relative_l2_coefficient': None,
+                  'relative_l2_solution': None}
+        try:
+            if args.method == 'fm4pde':
+                with native_noise_provider(noise, enabled=args.prior == 'ofm'):
+                    result = run_single_ablation(config, checkpoint_bundle=(net, normalizer, payload),
+                                                  ground_truth=truth, observation_masks=masks)
+                artifact = torch.load(Path(result['run_dir']) / 'result.pt', map_location='cpu', weights_only=False)
+                prediction = artifact['sol_final'] if channels == 1 else torch.cat(
+                    (artifact['coef_final'], artifact['sol_final']), dim=1)
+                record['native_run_dir'] = result['run_dir']
+            else:
+                standardized = normalizer.transform(truth.pair)
+                mask = torch.zeros_like(standardized, dtype=torch.bool)
+                mask[:, -1:] = masks.sol.bool()
+                if args.method == 'eci':
+                    extra = native_model_extra(payload, truth, config)
+                    eci = SimpleNamespace(model=ECIVelocityAdapter(net, extra), gp=noise)
+                    sampled = FFM.eci_sample(eci, 1, args.eci_steps, args.eci_mix, None,
+                        [channels, 128, 128], args.device, DirichletCondition(value=standardized, mask=mask))
+                else:
+                    sampled = ofm_sample(operator_prior, standardized, mask, args)
+                prediction = normalizer.inverse_transform(sampled).detach().cpu()
+            if args.device.startswith('cuda'):
+                torch.cuda.synchronize()
+            prediction = prediction.numpy().astype(np.float64)
+            target = truth.pair.detach().cpu().numpy().astype(np.float64)
+            assert prediction.shape == target.shape
+            np.save(args.output / f'prediction_{index:03d}.npy', prediction)
+            if not np.isfinite(prediction).all():
+                raise FloatingPointError('Nonfinite prediction')
+            norms = np.linalg.norm(target.reshape(channels, -1), axis=1)
+            if np.any(norms == 0):
+                raise FloatingPointError('Zero ground-truth norm')
+            errors = np.linalg.norm((prediction - target).reshape(channels, -1), axis=1) / norms
+            if not np.isfinite(errors).all():
+                raise FloatingPointError('Nonfinite relative error')
+            record['relative_l2_solution'] = float(errors[-1])
+            if channels == 2:
+                record['relative_l2_coefficient'] = float(errors[0])
+        except (FloatingPointError, RuntimeError, AssertionError) as error:
+            numerical = isinstance(error, FloatingPointError) or any(word in str(error).lower()
+                for word in ('underflow in dt', 'non-finite', 'nonfinite', 'nan', 'infinite'))
+            if not numerical and not isinstance(error, torch.cuda.OutOfMemoryError):
+                raise
+            record.update(status='failed', error=str(error))
+            if isinstance(error, torch.cuda.OutOfMemoryError):
+                atomic_json(result_path, record)
+                raise
+        record.update(seconds=time.monotonic() - start,
+            peak_allocated_bytes=torch.cuda.max_memory_allocated() if args.device.startswith('cuda') else None,
+            peak_reserved_bytes=torch.cuda.max_memory_reserved() if args.device.startswith('cuda') else None)
+        atomic_json(result_path, record)
+        print(json.dumps(record), flush=True)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--prior', choices=['fm4pde', 'ofm'], required=True)
+    parser.add_argument('--method', choices=['eci', 'ofm', 'fm4pde'], required=True)
+    parser.add_argument('--pde', choices=['poisson', 'helmholtz', 'darcy', 'nsnonbounded', 'burger'], required=True)
+    for name in ('fm4pde', 'ofm', 'eci', 'checkpoint', 'assets', 'output'):
+        parser.add_argument('--' + name, type=Path, required=True)
+    parser.add_argument('--source', type=Path)
+    parser.add_argument('--split', choices=['id', 'smooth', 'rough'], required=True)
+    parser.add_argument('--offset', type=int, default=0)
+    parser.add_argument('--count', type=int, default=100)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--device', default='cuda')
+    parser.add_argument('--profile', action='store_true')
+    parser.add_argument('--eci-steps', type=int, default=800)
+    parser.add_argument('--eci-mix', type=int, default=5)
+    parser.add_argument('--fm-steps', type=int, default=100)
+    parser.add_argument('--langevin-steps', type=int, default=100)
+    parser.add_argument('--hutchinson', type=int, default=1)
+    parser.add_argument('--noise-variance', type=float, default=1e-3)
+    main(parser.parse_args())

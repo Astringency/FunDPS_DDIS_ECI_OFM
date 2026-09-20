@@ -30,20 +30,21 @@ class ECIPriorShapeAdapter:
         self.gp = gp
 
     def sample(self, grid, dims, n_samples=1):
-        assert list(dims) == [2, 128, 128]
+        assert dims[0] in (1, 2) and list(dims[1:]) == [128, 128]
         return self.gp.sample(list(dims[1:]), n_samples=n_samples, n_channels=dims[0])
 
 
 def ofm_sample(prior, truth, mask, args):
     from sampling_FSGLD.samplers import LangevinDynamics
-    latent = prior.gp.sample([128, 128], n_samples=1, n_channels=2).detach().requires_grad_(True)
+    channels = truth.shape[1]
+    latent = prior.gp.sample([128, 128], n_samples=1, n_channels=channels).detach().requires_grad_(True)
     observed = truth[0][mask[0]]
 
     def negative_log_posterior(x):
         # Same objective as OFM_GRF_3C_Regression.ipynb, cell 25. Only the
         # codomain count and observation selection change for this dataset.
         current, logp, _ = prior.data_likelihood_precise_codomain(
-            x, n_channels=2, n_eval=4, n_repeat=args.hutchinson,
+            x, n_channels=channels, n_eval=4, n_repeat=args.hutchinson,
             forward=True, method="dopri5")
         loss1 = -0.5 * torch.sum((observed - current[mask[0]]) ** 2) / args.noise_variance
         loss = -(loss1 + logp)
