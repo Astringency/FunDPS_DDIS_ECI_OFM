@@ -16,9 +16,8 @@ while [[ ! -f "$root/workers/$previous/controller.exit" ]]; do
 done
 previous_code="$(cat "$root/workers/$previous/controller.exit")"
 if [[ "$previous_code" != 0 ]]; then
-  printf '%s\n' "Previous GPU worker $previous failed with exit $previous_code" > "$worker_dir/controller.log"
-  printf '%s\n' 1 > "$worker_dir/controller.exit"
-  exit 1
+  printf '%s\n' "Previous GPU worker $previous exited $previous_code; continuing assigned cells" \
+    > "$worker_dir/predecessor_status"
 fi
 
 bash "$base/orchestration/adapters/parallel_two_case_worker.sh" "$gpu" "$name" "$@"
