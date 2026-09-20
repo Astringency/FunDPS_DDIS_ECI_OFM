@@ -23,9 +23,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', required=True, type=Path)
     parser.add_argument('--poll-seconds', type=int, default=30)
+    parser.add_argument('--workers', nargs='+', default=['gpu4', 'gpu6'])
     args = parser.parse_args()
     root = args.root
-    exits = [root / 'workers' / f'gpu{gpu}' / 'controller.exit' for gpu in (4, 6)]
+    exits = [root / 'workers' / name / 'controller.exit' for name in args.workers]
     while not all(path.exists() for path in exits):
         print('Waiting for ' + ', '.join(str(path) for path in exits if not path.exists()), flush=True)
         time.sleep(args.poll_seconds)
@@ -34,7 +35,7 @@ def main():
     report_script = Path(__file__).with_name('summarize_two_case_poisson.py')
     subprocess.run([sys.executable, str(report_script), '--root', str(root), '--render'], check=True)
     summary = json.loads((root / 'summary.json').read_text())
-    if codes != [0, 0] or summary['status'] != 'complete' or summary['verified_rows'] != 210:
+    if any(codes) or summary['status'] != 'complete' or summary['verified_rows'] != 210:
         raise RuntimeError(f'Pilot incomplete: worker exits={codes}, summary={summary["status"]}, '
                            f'verified rows={summary["verified_rows"]}/210')
     artifacts = [root / name for name in ('plan.json', 'selection.json', 'comparison.csv',
@@ -44,7 +45,8 @@ def main():
         raise RuntimeError(f'Expected 15 paired figures, found {len(figures)}')
     artifact_hashes = {str(path.relative_to(root)): sha256(path) for path in artifacts + figures}
     record = {'status': 'complete', 'completed_utc': datetime.now(timezone.utc).isoformat(),
-              'worker_exit_codes': codes, 'verified_rows': summary['verified_rows'],
+              'workers': args.workers, 'worker_exit_codes': codes,
+              'verified_rows': summary['verified_rows'],
               'artifact_sha256': artifact_hashes}
     (root / 'finalized.json').write_text(json.dumps(record, indent=2) + '\n')
     print(json.dumps({'status': 'complete', 'verified_rows': 210, 'figures': len(figures)}), flush=True)

@@ -101,9 +101,13 @@ def commands(root, plan, label, task, split):
         yield 'pair', destination, command, validator
 
 
-def worker(root, gpu, methods):
+def worker(root, gpu, methods, cells=None, worker_name=None):
     plan = json.loads((root / 'plan.json').read_text())
     assert all(method in METHODS for method in methods)
+    allowed = set(cells or (f'{task}:{split}' for task in TASKS for split in SPLITS))
+    if not allowed or any(cell not in {f'{task}:{split}' for task in TASKS for split in SPLITS}
+                          for cell in allowed):
+        raise ValueError(f'Unknown task/split cell: {sorted(allowed)}')
     lock_path = OUT / 'locks' / f'provisional_gpu_{gpu}.lock'
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open('w') as lock:
@@ -111,12 +115,15 @@ def worker(root, gpu, methods):
         env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), OMP_NUM_THREADS='4',
                    OPENBLAS_NUM_THREADS='4', MPLBACKEND='Agg', WANDB_MODE='offline',
                    PYTHONDONTWRITEBYTECODE='1')
-        worker_dir = root / 'workers' / f'gpu{gpu}'
+        worker_dir = root / 'workers' / (worker_name or f'gpu{gpu}')
         worker_dir.mkdir(parents=True, exist_ok=True)
-        (worker_dir / 'methods.json').write_text(json.dumps(methods) + '\n')
+        (worker_dir / 'assignment.json').write_text(json.dumps({
+            'gpu': gpu, 'methods': methods, 'cells': sorted(allowed)}, indent=2) + '\n')
         failures = []
         for task in TASKS:
             for split in SPLITS:
+                if f'{task}:{split}' not in allowed:
+                    continue
                 for label in methods:
                     for kind, output, command, validator in commands(root, plan, label, task, split):
                         if (output / 'verified_summary.json').exists():
@@ -159,10 +166,12 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--gpu', type=int)
     parser.add_argument('--methods', nargs='+', choices=list(METHODS))
+    parser.add_argument('--cells', nargs='+')
+    parser.add_argument('--worker-name')
     args = parser.parse_args()
     if args.mode == 'prepare':
         prepare(args.root)
     else:
         if args.gpu is None or not args.methods:
             parser.error('Worker requires --gpu and --methods')
-        worker(args.root, args.gpu, args.methods)
+        worker(args.root, args.gpu, args.methods, args.cells, args.worker_name)
