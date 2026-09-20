@@ -112,10 +112,13 @@ def main(args):
                 with native_noise_provider(noise, enabled=args.prior == 'ofm'):
                     result = run_single_ablation(config, checkpoint_bundle=(net, normalizer, payload),
                                                   ground_truth=truth, observation_masks=masks)
+                if result['status'] != 'ok' or result['pde_residual_status'] not in ('reliable', 'approximate'):
+                    raise RuntimeError(f"Native FM4PDE residual evaluation did not complete: {result['status']}, {result['pde_residual_status']}")
                 artifact = torch.load(Path(result['run_dir']) / 'result.pt', map_location='cpu', weights_only=False)
                 prediction = artifact['sol_final'] if channels == 1 else torch.cat(
                     (artifact['coef_final'], artifact['sol_final']), dim=1)
                 record['native_run_dir'] = result['run_dir']
+                record['pde_residual_status'] = result['pde_residual_status']
             else:
                 standardized = normalizer.transform(truth.pair)
                 mask = torch.zeros_like(standardized, dtype=torch.bool)

@@ -25,6 +25,42 @@ supervisors, `adapters/plateau_priority.py` preserves the intentional signal
 exit in an audit directory and publishes completion only after process exit
 and validation-best checkpoint verification; it does not restart training.
 
+Expanded implementation checkpoint, server216 2026-09-20 10:59:
+
+- Both DDIS auxiliary FNOs have stopped at confirmed plateaus. Poisson selected
+  epoch 20 (validation loss 0.005447); Helmholtz selected epoch 70 (0.002899).
+  Four diffusion priors and both priority OFM priors continue. OFM currently
+  runs at about 206 seconds per epoch; stopping time depends on future validation.
+- Darcy/NS/Burgers authoritative exports are complete on server197, with
+  45,000/5,000 training/validation cases and three 100-case tests. Checksummed
+  relays to server216 and three training controllers are live; formal training
+  waits for verified data and successful batch-1/batch-100 memory profiles.
+- The five existing ordinary-FM checkpoints are selected by the pinned current
+  `configs/main` files, not by modification time. All are schema-3 checkpoints
+  saved at epoch 299, with their own channel standardizers and no saved EMA.
+  Native evaluation inputs, including NS viscosity/time parameters, were exported
+  with unmodified `sampling.data.load_ground_truth`. Assets are still transferring.
+- FM4PDE source is frozen at `cbe627cb85cd6cbba7083671d256f3bf418792e7` on both
+  hosts. `evaluate_shared_prior.py` calls official ECI/OFM and native FM4PDE
+  routines. Runtime adapters provide argument order, conditioning, normalization,
+  and the trained noise prior. OFM's Matérn GP is used for both native FM4PDE
+  initial noise and stochastic bridge refreshes; ordinary FM retains iid noise.
+- Four CPU integration checks passed on server216 (1.007 seconds): gradients
+  through frozen models, both noise draw sites and restoration, official ECI
+  constraints/namespace isolation for one/two channels, and OFM normalization.
+  The isolated runtime uses Python 3.13.7 / Torch 2.8.0, inheriting the existing
+  FM4PDE environment without modifying it. Optional package imports and exact OT
+  were exercised; unused optional dependencies are recorded in the setup log.
+- All 87 evaluations are explicitly listed in `configs/expanded_evaluation_matrix.json`.
+  The 24 original controllers remain; 63 added controllers are live and waiting
+  for verified assets, completed prior selection when applicable, and GPU capacity.
+  Each addition must pass a full-schedule single-case preflight before its 100 cases.
+  `validate_shared_prior.py` independently recomputes physical errors and preserves
+  failures without capping or substituting successful-case means for full means.
+- No added formal sampling result exists yet. Real-checkpoint GPU compatibility
+  and expanded 87-run aggregation still require completion. The original 24-run
+  summary is a subset and cannot satisfy the expanded goal by itself.
+
 ## Current checkpoint — 2026-09-20 (supersedes historical status below)
 
 The user authorized minimal data/runtime adapters with official algorithms unchanged, then **removed DiffusionPDE and requested early stopping for every remaining model**. Active scope: DDIS, FunDPS, OFM and ECI on Poisson/Helmholtz. OFM and ECI share one official joint prior per PDE (paper H.3). Formal training started on 2026-09-20 around server time 01:23. No formal training or final evaluation has completed at this checkpoint.
