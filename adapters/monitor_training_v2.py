@@ -22,6 +22,9 @@ while True:
             continue
         if (state / 'failure.json').exists():
             continue
+        supervisor = json.loads((state / 'supervisor.json').read_text())
+        if 'window_epochs' in supervisor['policy']:
+            continue  # New supervisors enforce the same rule themselves.
         history, best, checkpoint = selection(state)
         stop, evidence = window_plateau(history, settings)
         write_json(audit / (folder.name + '.json'), {'stop_eligible': stop, 'evidence': evidence,

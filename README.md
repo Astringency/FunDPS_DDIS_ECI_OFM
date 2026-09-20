@@ -1,3 +1,7 @@
+# Current protocol
+
+See [the September 20 protocol revision](provenance/protocol_20260920_v2.md) and `configs/evaluation_matrix_v2.json` for the current authorized scope. Earlier operational notes below are historical.
+
 # DDIS and generative baselines on FM4PDE data
 
 ## Expanded scope — 2026-09-20, supersedes the two-PDE scope below

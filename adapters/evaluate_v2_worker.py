@@ -25,6 +25,8 @@ def run(cmd, logfile):
     with logfile.open('w') as f:
         subprocess.run(list(map(str, cmd)), stdout=f, stderr=subprocess.STDOUT, check=True)
 while True:
+    matrix = json.loads((BASE / 'orchestration/configs/evaluation_matrix_v2.json').read_text())['evaluations']
+    matrix = [r for r in matrix if r['prior'] in ('fm4pde', 'ofm')]
     busy = False
     for q in ('poisson', 'helmholtz', 'darcy', 'nsnonbounded', 'burger'):
         state = OUT / 'jobs' / f'flow_{q}'
