@@ -80,6 +80,24 @@ else
         "$task_base/orchestration/adapters/validate_shared_prior.py" --output "$task_root/evaluation")
 fi
 test -s "$task_checkpoint"
+if test -f "$task_root/prior_selection.json"; then
+    "$task_base/venv/bin/python" - "$task_root/prior_selection.json" "$task_checkpoint" <<'PY'
+import json
+from pathlib import Path
+import sys
+selected = json.loads(Path(sys.argv[1]).read_text())
+assert Path(selected['checkpoint']).resolve(strict=True) == Path(sys.argv[2]).resolve(strict=True)
+PY
+fi
+if test -f "$task_root/surrogate_selection.json"; then
+    "$task_base/venv/bin/python" - "$task_root/surrogate_selection.json" "${task_extra[1]}" <<'PY'
+import json
+from pathlib import Path
+import sys
+selected = json.loads(Path(sys.argv[1]).read_text())
+assert Path(selected['checkpoint']).resolve(strict=True) == Path(sys.argv[2]).resolve(strict=True)
+PY
+fi
 printf '%s\n' "$task_checkpoint" > "$task_root/checkpoint_path.txt"
 sha256sum "$task_checkpoint" > "$task_root/checkpoint.sha256"
 if test "${#task_extra[@]}" -gt 0; then
