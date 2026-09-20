@@ -5,7 +5,7 @@ method=$1
 pde=$2
 task_gpu_options=$3
 task_min_free=$4
-case "$pde" in poisson|helmholtz) ;; *) exit 2;; esac
+case "$pde" in poisson|helmholtz|darcy|nsnonbounded) ;; *) exit 2;; esac
 task_base=/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919
 task_out=/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919
 task_state=$task_out/jobs/${method}_${pde}
@@ -25,6 +25,15 @@ while ! test -f "$task_training_meta"; do sleep 30; done
 while ! test -f "$task_validation_meta"; do sleep 30; done
 if test "$method" = surrogate; then
     while ! test -L "$task_out/data/surrogate_work/data/DiffPDE/${pde}_test_hf"; do sleep 30; done
+fi
+# New non-OFM queues must yield to all five OFM training tasks.
+if test "$method" != flow; then
+    for task_priority_pde in poisson helmholtz darcy nsnonbounded burger; do
+        while ! test -f "$task_out/jobs/flow_$task_priority_pde/training_completed"; do
+            echo 'Waiting for priority OFM training completion' > "$task_state/status"
+            sleep 30
+        done
+    done
 fi
 # Locks serialize this experiment's jobs on each GPU. A candidate list allows
 # another safe slot when the preferred GPU is occupied by unrelated jobs.
@@ -87,7 +96,7 @@ case "$method" in
         ;;
 esac
 "$task_base/venv/bin/python" -u "$task_base/orchestration/adapters/early_stop.py" \
-    --method "$method" --policy "$task_base/orchestration/configs/early_stopping.json" \
+    --method "$method" --policy "$task_base/orchestration/configs/early_stopping_v2.json" \
     --state "$task_state/early_stopping" --training-root "$task_training_root" \
     --repo "$task_base/official/$task_repo" \
     --validation "$task_out/data/preprocessing/validation/data/DiffPDE/${pde}_test_hf" \

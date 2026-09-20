@@ -54,7 +54,7 @@ PY
 done
 echo 'Training official OFM prior with early stopping' > "$task_state/status"
 "$task_base/venv/bin/python" -u "$task_base/orchestration/adapters/early_stop.py" \
-    --method flow --policy "$task_base/orchestration/configs/early_stopping.json" \
+    --method flow --policy "$task_base/orchestration/configs/early_stopping_v2.json" \
     --state "$task_state/early_stopping" --training-root "$task_out/training/flow/$task_pde" \
     --repo "$task_base/official/OFM" --validation "$task_data/validation.npy" -- \
     "$task_base/venv-flow/bin/python" -u "$task_base/orchestration/adapters/train_flow.py" \

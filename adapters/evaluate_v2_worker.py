@@ -33,7 +33,7 @@ while True:
         if (state / 'gpu_index').exists() and not (state / 'training_completed').exists():
             busy |= (state / 'gpu_index').read_text().strip() == str(a.gpu)
     free = int(subprocess.check_output(['nvidia-smi', '-i', str(a.gpu), '--query-gpu=memory.free', '--format=csv,noheader,nounits']))
-    if busy or free < 40960 or os.getloadavg()[0] >= 110:
+    if busy or free < 20480 or os.getloadavg()[0] >= 110:
         time.sleep(30)
         continue
     chosen = None
@@ -49,6 +49,10 @@ while True:
                     continue
                 pending = True
                 if (dest / 'claimed.json').exists():
+                    claim = json.loads((dest / 'claimed.json').read_text())
+                    if Path('/proc', str(claim['pid'])).exists():
+                        continue
+                if r['method'] == 'ofm' and free < 40960:
                     continue
                 assets = OUT / 'data/shared_prior_assets'
                 if r['prior'] == 'ofm':
@@ -64,7 +68,18 @@ while True:
                 try:
                     dest.mkdir(parents=True, exist_ok=False)
                 except FileExistsError:
-                    continue
+                    if not (dest / 'claimed.json').exists():
+                        continue
+                    claim = json.loads((dest / 'claimed.json').read_text())
+                    if Path('/proc', str(claim['pid'])).exists():
+                        continue
+                    cell_lock = (dest / 'resume.lock').open('w')
+                    try:
+                        fcntl.flock(cell_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        cell_lock.close()
+                        continue
+                    (dest / 'previous_claim.json').write_text(json.dumps(claim))
                 (dest / 'claimed.json').write_text(json.dumps({'gpu': a.gpu, 'pid': os.getpid(), 'time': time.time()}))
                 chosen = (r, offset, dest, checkpoint, assets, overrides)
                 break

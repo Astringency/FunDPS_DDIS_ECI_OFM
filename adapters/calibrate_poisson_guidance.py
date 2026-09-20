@@ -5,11 +5,13 @@ import fcntl
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 import subprocess
 import numpy as np
 import torch
 import yaml
+torch.set_num_threads(4)
 
 BASE = Path('/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919')
 OUT = Path('/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919')
@@ -26,7 +28,9 @@ os.environ.update(CUDA_VISIBLE_DEVICES=str(args.gpu), OMP_NUM_THREADS='4', OPENB
 lock = (OUT / f'locks/evaluation_gpu_{args.gpu}.lock').open('w')
 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 free = int(subprocess.check_output(['nvidia-smi', '-i', str(args.gpu), '--query-gpu=memory.free', '--format=csv,noheader,nounits']))
-assert free >= 40960 and os.getloadavg()[0] < 110
+while free < 20480 or os.getloadavg()[0] >= 110:
+    time.sleep(30)
+    free = int(subprocess.check_output(['nvidia-smi', '-i', str(args.gpu), '--query-gpu=memory.free', '--format=csv,noheader,nounits']))
 (ROOT / 'resources.txt').write_text(subprocess.check_output(['nvidia-smi'], text=True))
 def sha(p):
     h = hashlib.sha256()

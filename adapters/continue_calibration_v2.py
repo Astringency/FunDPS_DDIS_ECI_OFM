@@ -7,6 +7,7 @@ import time
 
 BASE = Path('/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919')
 OUT = Path('/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919')
+os.environ.update(OMP_NUM_THREADS='4', OPENBLAS_NUM_THREADS='4', MPLBACKEND='Agg')
 root = OUT / 'jobs/calibration_remaining_v2'
 root.mkdir(exist_ok=True)
 pending = ['helmholtz', 'burger', 'darcy', 'nsnonbounded']
