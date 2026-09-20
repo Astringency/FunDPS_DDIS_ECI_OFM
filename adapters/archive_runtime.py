@@ -1,4 +1,4 @@
-"""Archive complete Git histories and record the two active Python environments."""
+"""Archive complete Git histories and record all active Python environments."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -25,6 +25,7 @@ def main(base, output):
     (archive / "restore_checks").mkdir(exist_ok=True)
     records = {}
     repositories = {name: base / "official" / name for name in ("DDIS", "FunDPS", "OFM", "ECI", "neuraloperator")}
+    repositories["FM4PDE"] = base / "official/FM4PDE-cbe627c"
     repositories["orchestration"] = base / "orchestration"
     for name, repository in repositories.items():
         revision = run(["git", "rev-parse", "HEAD"], repository).strip()
@@ -57,17 +58,19 @@ def main(base, output):
              "'python':sys.version,'torch':torch.__version__,'cuda':torch.version.cuda,"
              "'torch_path':torch.__file__,'neuraloperator':neuralop.__version__,"
              "'neuraloperator_path':neuralop.__file__}))")
-    for name in ("venv", "venv-flow"):
+    for name in ("venv", "venv-flow", "venv-shared-prior"):
         python = base / name / "bin/python"
         freeze = run([str(python), "-m", "pip", "freeze", "--all"])
         freeze_path = archive / f"{name}-{revision}-freeze.txt"
         freeze_path.write_text(freeze)
         environments[name] = {"imports": json.loads(run([str(python), "-c", probe])),
-                              "freeze_file": str(freeze_path), "sha256": digest(freeze_path)}
+                              "freeze_file": str(freeze_path), "sha256": digest(freeze_path),
+                              "venv_configuration": (base / name / "pyvenv.cfg").read_text()}
     record = {"created_utc": datetime.now(timezone.utc).isoformat(), "repositories": records,
               "environments": environments, "result_root": str(output),
               "limits": ["Git restore verification covers source history, not a fresh environment installation or retraining.",
                          "The flow venv imports shared dependencies from the base venv; both remain required while jobs run.",
+                         "The shared-prior venv inherits the existing conda FM4PDE environment; preserve that parent environment.",
                          "Source data and predictions are separate artifacts, not embedded in Git bundles.",
                          "Restore-check clones are task-created temporary files; clean them after final result archival."]}
     path = archive / f"runtime-{revision}.json"

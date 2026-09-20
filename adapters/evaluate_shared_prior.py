@@ -1,8 +1,10 @@
 """Evaluate official samplers on a pinned ordinary FM or operator FM prior."""
 import argparse
 import hashlib
+import importlib.metadata
 import json
 from pathlib import Path
+import subprocess
 import sys
 import time
 from types import SimpleNamespace
@@ -41,6 +43,13 @@ def main(args):
     from sampling.runner import run_single_ablation
 
     assets_manifest = json.loads((args.assets / 'manifest.json').read_text())
+    source_revisions = {}
+    for name, path in (('FM4PDE', args.fm4pde), ('OFM', args.ofm), ('ECI', args.eci)):
+        source_revisions[name] = subprocess.check_output(['git', '-C', str(path), 'rev-parse', 'HEAD'], text=True).strip()
+        changed = subprocess.check_output(['git', '-C', str(path), 'diff', '--name-only', 'HEAD', '--', '*.py'], text=True).strip()
+        if changed:
+            raise ValueError(f'Official Python sources have uncommitted changes in {name}: {changed}')
+    assert source_revisions['FM4PDE'] == assets_manifest['fm4pde_revision']
     assets = assets_manifest['pdes'][args.pde]
     truth_path = args.assets / assets['splits'][args.split]['file']
     assert sha256(truth_path) == assets['splits'][args.split]['sha256']
@@ -66,6 +75,9 @@ def main(args):
     config_record.update(checkpoint_sha256=checkpoint_digest,
         truth_sha256=assets['splits'][args.split]['sha256'],
         assets_manifest_sha256=sha256(args.assets / 'manifest.json'),
+        source_revisions=source_revisions,
+        runtime={'python': sys.version, 'torch': torch.__version__, 'cuda': torch.version.cuda,
+                 **{name: importlib.metadata.version(name) for name in ('neuraloperator', 'torchcfm', 'gpytorch', 'torchdiffeq')}},
         fm4pde_revision=assets_manifest['fm4pde_revision'],
         task=assets['task'], observations=500, observation_noise=0,
         noise_family='iid_standard_Gaussian' if args.prior == 'fm4pde' else 'official_OFM_Matern_GP',
