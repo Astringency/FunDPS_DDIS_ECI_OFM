@@ -1,6 +1,7 @@
 """Check manual checkpoint stopping without GPUs or formal experiment data."""
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -51,6 +52,12 @@ class PlateauPriorityTest(unittest.TestCase):
                 '--repo', str(root), '--validation', str(root), '--', sys.executable, str(producer), str(models)]
             unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(90)'], start_new_session=True)
             supervisor = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            waiter = subprocess.Popen([sys.executable, '-c',
+                "import sys,time\nfrom pathlib import Path\n"
+                "p=Path(sys.argv[1])\n"
+                "while not (p/'training_completed').exists():\n"
+                " if (p/'early_stopping/failure.json').exists(): sys.exit(9)\n"
+                " time.sleep(.02)\n", str(state.parent)])
             try:
                 deadline = time.monotonic() + 20
                 while True:
@@ -63,8 +70,10 @@ class PlateauPriorityTest(unittest.TestCase):
                 trainer = identity(json.loads((state / 'process.json').read_text())['pid'])
                 policy = {'reason': 'test user-authorized stop', 'relative_min_delta': .01, 'patience': 3,
                     'jobs': {'surrogate_poisson': {'minimum_progress': 50, 'after_progress': 40}}}
-                completion = stop_validated_job(root, 'surrogate_poisson', policy, ADAPTERS.parent, controllers=[])
+                completion = stop_validated_job(root, 'surrogate_poisson', policy, ADAPTERS.parent,
+                                                controllers=[identity(waiter.pid)])
                 supervisor.communicate(timeout=5)
+                self.assertEqual(waiter.wait(timeout=5), 0, 'Intentional stop broke the dependent controller')
                 self.assertFalse(same_live(trainer))
                 self.assertIsNone(unrelated.poll())
                 self.assertNotEqual(supervisor.returncode, 0)
@@ -79,6 +88,10 @@ class PlateauPriorityTest(unittest.TestCase):
                     supervisor.communicate(timeout=10)
                 unrelated.terminate()
                 unrelated.wait(timeout=5)
+                if waiter.poll() is None:
+                    os.kill(waiter.pid, signal.SIGCONT)
+                    waiter.terminate()
+                    waiter.wait(timeout=5)
 
 
 if __name__ == '__main__':
