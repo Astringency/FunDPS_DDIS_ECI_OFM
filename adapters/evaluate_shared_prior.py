@@ -32,6 +32,11 @@ def atomic_json(path, value):
 
 
 def main(args):
+    from native_diagnostics import trace_native
+    fm_overrides = json.loads(args.fm_overrides.read_text()) if args.fm_overrides else {}
+    allowed = {'zeta_obs_a', 'zeta_obs_u', 'zeta_pde', 'clip_threshold', 'guidance_components'}
+    if set(fm_overrides) - allowed or (fm_overrides and args.method != 'fm4pde'):
+        raise ValueError('Only authorized native guidance hyperparameters may be overridden')
     if args.method == 'ofm' and args.prior != 'ofm':
         raise ValueError('OFM regression is only configured for the operator prior group')
     if not 0 <= args.offset < 100 or not 1 <= args.count <= 100 - args.offset:
@@ -86,7 +91,8 @@ def main(args):
         task=task, observations=500, observation_noise=0,
         noise_family='iid_standard_Gaussian' if args.prior == 'fm4pde' else 'official_OFM_Matern_GP',
         protocol='native main FM4PDE config; ECI 800x5; OFM Langevin 100; identical observations',
-        fm4pde_noise_adapter='initial and stochastic bridge provider' if args.prior == 'ofm' else None)
+        fm4pde_noise_adapter='initial and stochastic bridge provider' if args.prior == 'ofm' else None,
+        guidance_overrides=fm_overrides)
     run_path = args.output / 'run.json'
     if run_path.exists() and json.loads(run_path.read_text()) != config_record:
         raise ValueError('Output directory already belongs to a different configuration')
@@ -120,6 +126,9 @@ def main(args):
             'num_steps': args.fm_steps, 'save_plots': False})
         config.runtime_metadata.update(shared_prior_comparison=config_record,
             common_observation_indices_file=str(args.output / 'solution_observation_indices.npy'))
+        for key, value in fm_overrides.items():
+            setattr(config, key, value)
+        config.runtime_metadata['guidance_overrides'] = fm_overrides
         start = time.monotonic()
         if args.device.startswith('cuda'):
             torch.cuda.reset_peak_memory_stats()
@@ -127,7 +136,8 @@ def main(args):
                   'relative_l2_solution': None}
         try:
             if args.method == 'fm4pde':
-                with native_noise_provider(noise, enabled=args.prior == 'ofm'):
+                with native_noise_provider(noise, enabled=args.prior == 'ofm'), trace_native(
+                        args.output / f'trace_{index:03d}.jsonl', args.trace_native):
                     result = run_single_ablation(config, checkpoint_bundle=(net, normalizer, payload),
                                                   ground_truth=truth, observation_masks=masks)
                 if result['status'] != 'ok' or result['pde_residual_status'] not in ('reliable', 'approximate'):
@@ -203,4 +213,6 @@ if __name__ == '__main__':
     parser.add_argument('--langevin-steps', type=int, default=100)
     parser.add_argument('--hutchinson', type=int, default=1)
     parser.add_argument('--noise-variance', type=float, default=1e-3)
+    parser.add_argument('--fm-overrides', type=Path)
+    parser.add_argument('--trace-native', action='store_true')
     main(parser.parse_args())

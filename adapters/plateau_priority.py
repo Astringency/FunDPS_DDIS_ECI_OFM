@@ -16,7 +16,7 @@ import signal
 import subprocess
 import time
 
-from early_stop import write_json
+from early_stop import write_json, window_plateau
 
 
 def read(path):
@@ -40,6 +40,9 @@ def same_live(saved):
 
 
 def plateau(history, spec, settings):
+    if 'window_epochs' in settings:
+        stop, evidence = window_plateau(history, settings)
+        return stop, evidence
     anchor, bad = math.inf, 0
     for row in history:
         loss = row['validation_loss']

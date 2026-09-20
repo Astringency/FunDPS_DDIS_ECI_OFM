@@ -1,0 +1,5 @@
+{
+  "source": "official/FunDPS/configs/training/ns-nonbounded.yml",
+  "official_pde_preset": true,
+  "adaptation": "paths, seed, offline logging, checkpoint interval; unchanged model/loss/optimizer"
+}

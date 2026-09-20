@@ -132,7 +132,7 @@ def make_hf(args):
         raise ValueError("Sample membership/order does not match the reference protocol")
     if args.output.exists():
         raise FileExistsError(args.output)
-    features = Features({"id": Value("int32"), "data": Array3D((2, 128, 128), "float32")})
+    features = Features({"id": Value("int32"), "data": Array3D(tuple(manifest["shape"]), "float32")})
     dataset = Dataset.from_generator(hf_records, features=features,
         gen_kwargs={"array_path": str(array_path), "ids_path": str(args.source / entry["ids"])},
         cache_dir=str(args.cache))

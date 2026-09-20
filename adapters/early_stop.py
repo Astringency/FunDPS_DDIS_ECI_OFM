@@ -35,6 +35,25 @@ class StopPolicy:
         return best, progress >= self.minimum and self.bad >= self.patience
 
 
+def window_plateau(history, settings):
+    """Require a complete epoch window and measure cumulative best-loss gain."""
+    if not history:
+        return False, {}
+    unit = settings.get('progress_unit', history[-1].get('unit', 'epochs'))
+    scale = settings['training_samples'] if unit == 'training_images' else 1
+    last = history[-1]['progress']
+    cutoff = last - settings['window_epochs'] * scale
+    before = [r for r in history if r['progress'] <= cutoff]
+    if not before or last < settings['minimum_epochs'] * scale:
+        return False, {}
+    anchor = min(r['validation_loss'] for r in before)
+    best = min(r['validation_loss'] for r in history)
+    gain = (anchor - best) / max(abs(anchor), 1e-30)
+    return gain < settings['relative_window_gain'], {'window_epochs': settings['window_epochs'],
+        'anchor_loss': anchor, 'best_loss': best, 'relative_gain': gain,
+        'threshold': settings['relative_window_gain'], 'latest_progress': last}
+
+
 def write_json(path, value):
     temporary = path.with_suffix(path.suffix + ".partial")
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
@@ -92,6 +111,7 @@ def main(args):
         "policy": settings, "training_root": str(args.training_root),
         "validation": str(args.validation), "selection": "minimum validation loss"})
     seen, reason, selected = set(), "budget_completed", None
+    validation_rows = []
     log_path = args.state / "official_training.log"
     with log_path.open("w") as log:
         child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -139,6 +159,10 @@ def main(args):
                             raise ValueError("Checkpoint/validation epoch mismatch")
                         del contents
                     best, should_stop = policy.update(progress, metric)
+                    if 'window_epochs' in settings:
+                        validation_rows.append({'progress': progress, 'validation_loss': metric, 'unit': spec['progress_unit']})
+                        should_stop, evidence = window_plateau(validation_rows, settings)
+                        write_json(args.state / 'window_plateau.json', evidence)
                     seen.add(progress)
                     record = {"progress": progress, "unit": spec["progress_unit"], "validation_loss": metric,
                               "checkpoint": str(checkpoint), "best_loss": policy.best,

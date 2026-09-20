@@ -1,0 +1,44 @@
+outdir: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/training/ddis/darcy
+data: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/data/preprocessing/train/data/DiffPDE/darcy_hf
+resolution: 128
+cond: false
+arch: ddpmpp-uno
+precond: pi_edm
+duration: 5
+batch: 8
+batch_gpu: 8
+nn_resolution: null
+cbase: 64
+cres:
+- 1
+- 2
+- 4
+- 4
+lr: 0.0001
+lr_rampup: 5
+ema: 0.5
+dropout: 0.13
+augment: 0.12
+xflip: false
+channel: null
+DM_channel:
+- 0
+attn_resolutions:
+- 8
+num_blocks: 4
+fmult: 0.5
+rank: 0.1
+rbf_scale: 0.05
+fp16: false
+ls: 1
+bench: true
+cache: true
+workers: 4
+tick: 10
+snap: 10
+dump: 250
+seed: 0
+resume: null
+dry_run: false
+wandb: offline
+name: fm4pde_darcy_ddis_official
