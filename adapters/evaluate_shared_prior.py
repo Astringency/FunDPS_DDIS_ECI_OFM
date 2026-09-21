@@ -33,6 +33,13 @@ def atomic_json(path, value):
 
 def main(args):
     from native_diagnostics import trace_native
+    if args.eci_batch_size == 0:
+        policy = Path(__file__).resolve().parents[1] / 'configs/eci_batching.json'
+        settings = json.loads(policy.read_text()) if policy.exists() else {}
+        args.eci_batch_size = settings.get(args.prior, {}).get(args.pde, 1) if args.method == 'eci' else 1
+    existing_run = args.output / 'run.json'
+    if existing_run.exists():
+        args.eci_batch_size = json.loads(existing_run.read_text()).get('eci_batch_size', 1)
     fm_overrides = json.loads(args.fm_overrides.read_text()) if args.fm_overrides else {}
     allowed = {'zeta_obs_a', 'zeta_obs_u', 'zeta_pde', 'clip_threshold', 'guidance_components'}
     if set(fm_overrides) - allowed or (fm_overrides and args.method != 'fm4pde'):
@@ -94,8 +101,11 @@ def main(args):
         fm4pde_noise_adapter='initial and stochastic bridge provider' if args.prior == 'ofm' else None,
         guidance_overrides=fm_overrides)
     run_path = args.output / 'run.json'
-    if run_path.exists() and json.loads(run_path.read_text()) != config_record:
-        raise ValueError('Output directory already belongs to a different configuration')
+    if run_path.exists():
+        previous = json.loads(run_path.read_text())
+        previous.setdefault('eci_batch_size', 1)
+        if previous != config_record:
+            raise ValueError('Output directory already belongs to a different configuration')
     atomic_json(run_path, config_record)
     coefficient_indices, solution_indices = pair_observation_indices(args.seed)
     np.save(args.output / 'coefficient_observation_indices.npy', coefficient_indices)
@@ -111,6 +121,10 @@ def main(args):
         'peak_reserved_bytes': torch.cuda.max_memory_reserved() if args.device.startswith('cuda') else None,
         'normalizer': {key: value.tolist() if isinstance(value, torch.Tensor) else value
                        for key, value in normalizer.state_dict().items()}})
+    if args.method == 'eci' and args.eci_batch_size > 1:
+        from eci_batch_runtime import run_eci_batches
+        run_eci_batches(args, indices, saved, assets, task, net, normalizer, payload, noise, FFM, DirichletCondition)
+        return
     for index in indices:
         result_path = args.output / f'case_{index:03d}.json'
         if result_path.exists():
@@ -209,6 +223,8 @@ if __name__ == '__main__':
     parser.add_argument('--profile', action='store_true')
     parser.add_argument('--eci-steps', type=int, default=800)
     parser.add_argument('--eci-mix', type=int, default=5)
+    parser.add_argument('--eci-batch-size', type=int, choices=[0, 1, 2, 4, 8, 10, 16], default=0,
+                        help='0 loads the validated runtime batch policy; 1 preserves sequential sampling.')
     parser.add_argument('--fm-steps', type=int, default=100)
     parser.add_argument('--langevin-steps', type=int, default=100)
     parser.add_argument('--hutchinson', type=int, default=1)
