@@ -299,8 +299,13 @@ The other 99 cases remain byte-for-byte original results. The affected CSV row
 explicitly identifies this mixed configuration. The proposed full-setting rerun
 was cancelled and its partial diagnostics are excluded from the report.
 
-OFM now uses two admitted sampling processes per GPU on server216 (16 total),
-plus two exclusive Darcy-forward queues on server197. No server193 job is used.
+OFM uses two admitted regular sampling processes per GPU on server216 (16
+total), plus one bounded recovery process on GPU 2. Server197 runs two primary
+Darcy-forward queues and two bounded recovery queues (four samplers total).
+The recovery queues resume missing cases from the 19 interrupted shards and
+prioritize nearly complete shards; existing successful cases are retained.
+Recovery processes require 30 GiB free at admission, use activation
+recomputation and a 12 GiB allocated-memory guard. No server193 job is used.
 Server197 results live under
 `/research_data/users/zhangxifeng/C01Python/FM4PDE/outputs/ofm_sampling_20260921`.
 Thirty Darcy-forward shards are reserved centrally, preserving 18 previously
@@ -314,14 +319,26 @@ python3 ~/C01Python/DDIS_comparison_20260919/adapters/sync_ofm_server197.py \
   --cache ~/C01Python/DDIS_comparison_20260919/reports/resource_reallocation_20260921/server197_cache --once
 ```
 
-Some Darcy-forward trajectories exceed an exclusive 80GB GPU. Server197 alone
-therefore enables PyTorch non-reentrant activation recomputation around the
+Some Darcy-forward trajectories exceed an exclusive 80GB GPU. Server197 and
+the explicit server216 recovery queue therefore enable PyTorch non-reentrant
+activation recomputation around the
 unchanged official FNO forward. Model outputs and nested gradients were verified
 bitwise equal; two native one-step sampler probes were also bitwise equal.
 Probe peak allocated memory decreased from 15,072,269,312 to 1,597,429,248 bytes.
 The complete 100-step sampler, ODE tolerances, random seeds, observation masks,
 and learned weights are unchanged. `memory_runtime.json` records this runtime
 policy; this preflight measurement is not a bound on all future trajectories.
+
+`complete settings` counts settings with all 100 cases audited, not settings
+with some saved predictions. The 27 settings contain 270 ten-case shards;
+the regular queue advances across settings, so many partial settings can
+coexist with zero complete settings. The console now also shows verified
+shards and unresolved errors split into recovering, queued, retry-failed and
+unassigned/stale. `shard_recovery.csv` lists each unresolved shard, its host,
+process and latest available sampling step. A recovery heartbeat older than
+180 seconds is stale. Error records are archived only after the full shard is
+independently verified; server197 results additionally require publication to
+server216 before entering central verified counts.
 
 An SSH/read/validation failure exits nonzero instead of silently using stale
 data. Existing CSVs are replaced only after collection and validation succeed.
