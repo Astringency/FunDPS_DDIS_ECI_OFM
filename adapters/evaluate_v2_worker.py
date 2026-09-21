@@ -59,6 +59,8 @@ while True:
             for r in items:
                 cell = ROOT / r['prior'] / r['method'] / r['pde'] / r['task'] / r['split']
                 dest = cell / f'shard_{offset:03d}'
+                if (dest / 'external_assignment.json').exists():
+                    continue
                 if (dest / 'verified_summary.json').exists() or (dest / 'worker_failure.json').exists():
                     continue
                 pending = True

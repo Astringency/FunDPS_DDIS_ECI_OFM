@@ -16,6 +16,7 @@ while True:
     pending = []
     for failure in root.glob('*/*/*/shard_*/worker_failure.json'):
         folder = failure.parent
+        if (folder / 'external_assignment.json').exists(): continue
         if (folder / 'verified_summary.json').exists() or (folder / 'resource_needs_review.json').exists(): continue
         logs = [folder / name for name in ('sampling.log', 'profile.log')]
         text = '\n'.join(log.read_text(errors='replace') for log in logs if log.exists()).lower()
