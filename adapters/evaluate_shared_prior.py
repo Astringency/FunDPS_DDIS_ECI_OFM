@@ -126,6 +126,8 @@ def main(args):
         torch.cuda.reset_peak_memory_stats()
     net, normalizer, payload, noise, operator_prior = load_prior(args, channels)
     if args.method == 'ofm':
+        from ofm_memory_runtime import configure
+        configure(operator_prior, args)
         from ofm_resource_guard import install_guard
         memory_guard = install_guard(operator_prior)
     if args.method == 'eci':
