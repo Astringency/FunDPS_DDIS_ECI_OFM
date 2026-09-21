@@ -238,3 +238,39 @@ FM4PDE's current training loader makes a 45,000/5,000 split from the five shards
 - Recheck `setup/pilot-data.exit` and log: the waiting official preprocessing job appears to have exited during the brief interval when rsync left an incomplete file under its final name. The checksum guard must reject this file. Restart preprocessing only after inspecting the terminal status, and wait for an atomically published, checksum-verified complete source file.
 - `orchestration-current.bundle` exists locally but its last scp failed with connection refusal. Server216 orchestration is still at `9298ef8` unless current Git state proves otherwise. Sync the latest local Git revision once connectivity recovers.
 - The minimal-adapter clarification remains unanswered. Continue official DDIS/FunDPS work; do not infer permission for new OFM/ECI/DiffusionPDE adapters from elapsed time.
+# Refresh current sampling statistics (2026-09-21)
+
+From the local workstation, run this single command from any directory:
+
+```bash
+python3 ~/C01Python/DDIS_comparison_20260919/adapters/summarize_current_results.py
+```
+
+It reads the latest small JSON records on `server216` over SSH and writes
+`reports/five_method_comparison_20260921/metrics.csv` (159 method/PDE/task/split
+rows), plus `progress.csv`, `metrics.json`, `live_report.md`,
+`latest_summary.json` and a reproducible `latest_source_snapshot.json.gz`.
+The CSV covers ECI-FM, ECI-OFM, DDIS, FM-FM, FM-OFM, native OFM and FunDPS.
+FM-FM is parsed from the **uncommented 1000-case main tables** in
+`~/C04Papers/fm4pde_jmlr/fm4pde_jmlr_revision.tex`; DDIS/FunDPS cover the two
+trained PDEs, Poisson and Helmholtz. Each other included evaluation targets 100
+cases. No model loading, sampling, GPU work or modification of remote results
+occurs. The script uses only the Python standard library.
+
+Check `status`, `n_saved`, `n_verified`, `n_finite` and `n_failed` before using
+an error statistic. All error columns use **percent**. `mean_percent` is blank
+unless all 100 cases are verified and successful. `finite_mean_percent` and the
+other `finite_*` fields summarize only verified successful cases and may cover
+a partial evaluation; extreme finite errors are retained. Resource/worker
+errors are separate from verified numerical failures. Counts from unfinished
+shards are saved but do not enter error statistics until verification finishes.
+This command checks metadata, IDs and saved verification means; it does not
+revalidate all prediction arrays.
+
+An SSH/read/validation failure exits nonzero instead of silently using stale
+data. Existing CSVs are replaced only after collection and validation succeed.
+To reproduce a saved snapshot offline, add
+`--snapshot ~/C01Python/DDIS_comparison_20260919/reports/five_method_comparison_20260921/latest_source_snapshot.json.gz`.
+Use `--paper`, `--output`, `--host`, `--ssh-control-path` or `--local-root` to
+override paths/access. The older `reports/.../analyze.py` reproduces only the
+original frozen five-method snapshot; use the new command for current results.

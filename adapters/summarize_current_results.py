@@ -1,0 +1,382 @@
+#!/usr/bin/env python3
+"""Fetch current evaluation metadata and write seven-method metrics/progress CSVs.
+
+Uses only the Python standard library. Reads small JSON records; never runs
+sampling, imports a model, or modifies any server-side evaluation result.
+"""
+import argparse
+from collections import Counter, defaultdict
+import csv
+from datetime import datetime, timezone
+import gzip
+import hashlib
+import io
+import json
+import math
+import os
+from pathlib import Path
+import re
+import shlex
+import statistics
+import subprocess
+import sys
+import tempfile
+import time
+
+REPO = Path(__file__).resolve().parents[1]
+DEFAULT_ROOT = '/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919'
+REMOTE_SCRIPT = '/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919/orchestration/adapters/summarize_current_results.py'
+PDES = ('poisson', 'helmholtz', 'darcy', 'nsnonbounded', 'burger')
+SPLITS = ('id', 'smooth', 'rough')
+PREFIXES = {'ECI-FM': 'fm4pde/eci', 'ECI-OFM': 'ofm/eci',
+            'DDIS': 'diffusion/ddis', 'FM-OFM': 'ofm/fm4pde',
+            'OFM': 'ofm/ofm', 'FunDPS': 'diffusion/fundps'}
+METHODS = ('ECI-FM', 'ECI-OFM', 'DDIS', 'FM-FM', 'FM-OFM', 'OFM', 'FunDPS')
+
+
+def expected_cells():
+    for method in PREFIXES:
+        for pde in (PDES[:2] if method in ('DDIS', 'FunDPS') else PDES):
+            for task in (('both',) if pde == 'burger' else ('forward', 'inverse')):
+                for split in SPLITS:
+                    yield method, pde, task, split
+
+
+def read_json(path):
+    # Workers publish some JSON files directly. Retry a transient partial write.
+    for attempt in range(3):
+        try:
+            return json.loads(path.read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            if attempt == 2:
+                raise
+            time.sleep(.05)
+
+
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def collect(root):
+    root = Path(root)
+    if not (root / 'evaluation_v2').is_dir():
+        raise FileNotFoundError(f'Evaluation root not found: {root}')
+    result = dict(schema_version=1, collection_started_at=datetime.now(timezone.utc).isoformat(),
+                  root=str(root), runs={}, cases=[], warnings=[])
+    for method, pde, task, split in expected_cells():
+        cell = root / 'evaluation_v2' / PREFIXES[method] / pde / task / split
+        pattern = 'case_[0-9][0-9][0-9]' if method in ('DDIS', 'FunDPS') else 'shard_[0-9][0-9][0-9]'
+        for folder in sorted(cell.glob(pattern)):
+            if not folder.is_dir():
+                continue
+            run_key = str(folder.relative_to(root))
+            meta = dict(method=method, pde=pde, task=task, split=split)
+            for filename, key in [('run.json', 'run'), ('verified_summary.json', 'verified'),
+                                  ('worker_failure.json', 'worker_failure'),
+                                  ('resource_needs_review.json', 'resource_needs_review')]:
+                path = folder / filename
+                if path.exists():
+                    try:
+                        meta[key] = read_json(path)
+                    except (FileNotFoundError, json.JSONDecodeError) as error:
+                        # A final verification record must be readable to certify a run.
+                        if key == 'verified':
+                            raise ValueError(f'Unreadable verification: {path}') from error
+                        result['warnings'].append(f'Skipped a changing file: {path}')
+            if meta.get('run', {}).get('profile') or meta.get('run', {}).get('profile_only'):
+                continue
+            result['runs'][run_key] = meta
+            for path in sorted(folder.glob('case_[0-9][0-9][0-9].json')):
+                try:
+                    case = read_json(path)
+                except (FileNotFoundError, json.JSONDecodeError):
+                    if 'verified' in meta:
+                        raise ValueError(f'Unreadable case in verified run: {path}')
+                    result['warnings'].append(f'Skipped a changing file: {path}')
+                    continue
+                result['cases'].append(dict(case, method=method, pde=pde, task=task,
+                    split=split, run_key=run_key, case_source=str(path.relative_to(root))))
+    result['captured_at'] = datetime.now(timezone.utc).isoformat()
+    return result
+
+
+def parse_paper(path):
+    raw = path.read_text()
+    lines = [re.split(r'(?<!\\)%', line)[0] for line in raw.splitlines()]
+    clean = '\n'.join(lines)
+
+    def table(label):
+        loc = clean.index('\\label{' + label + '}')
+        return clean[clean.rfind('\\begin{table}', 0, loc):clean.index('\\end{table}', loc)]
+
+    def numbers(cell):
+        values = [float(v) for v in re.findall(r'\d+\.\d+', cell)]
+        if len(values) != 2:
+            raise ValueError(f'Cannot parse manuscript mean/std: {cell}')
+        return values
+
+    def row(pde, task, split, cell, line):
+        mean, sd = numbers(cell)
+        return dict(method='FM-FM', pde=pde, task=task, split=split, n=1000,
+            expected_n=1000, n_finite=None, n_failed=None, mean_percent=mean,
+            finite_mean_percent=mean, finite_std_percent=sd, status='paper_reference',
+            source='manuscript_main_table', source_line=lines.index(line) + 1)
+
+    rows = []
+    for task in ('forward', 'inverse'):
+        pde = None
+        block = table('tab:sparse-' + task + '-results')
+        if '1,000' not in block and '1000' not in block:
+            raise ValueError('Manuscript table sample size changed; review the parser')
+        for line in block.splitlines():
+            if not re.search(r'&\s*(ID|Smooth|Rough)\s*&', line):
+                continue
+            for token, name in [('Poisson', 'poisson'), ('Helmholtz', 'helmholtz'),
+                                ('Darcy', 'darcy'), ('Navier--Stokes', 'nsnonbounded')]:
+                if token in line:
+                    pde = name
+            fields = line.split('&')
+            if not pde:
+                raise ValueError('Cannot identify PDE in manuscript table')
+            rows.append(row(pde, task, fields[1].strip().lower(), fields[5], line))
+    block = table('tab:burgers-results')
+    random = block[block.index('{Random}'):block.index('{Structured}')]
+    line = next(line for line in random.splitlines() if 'FM4PDE (100 steps)' in line)
+    for split, cell in zip(SPLITS, line.split('&')[2:5]):
+        rows.append(row('burger', 'both', split, cell, line))
+    expected = {(p, t, s) for p in PDES for t in (('both',) if p == 'burger' else ('forward', 'inverse')) for s in SPLITS}
+    if len(rows) != 27 or {(r['pde'], r['task'], r['split']) for r in rows} != expected:
+        raise ValueError('Manuscript does not contain exactly the expected 27 settings')
+    return rows
+
+
+def quantile(values, q):
+    ordered = sorted(values)
+    loc = (len(ordered) - 1) * q
+    lower, upper = math.floor(loc), math.ceil(loc)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (loc - lower)
+
+
+def aggregate(snapshot):
+    grouped, by_run = defaultdict(list), defaultdict(list)
+    seen = set()
+    expected = set(expected_cells())
+    for case in snapshot['cases']:
+        key = tuple(case[k] for k in ('method', 'pde', 'task', 'split'))
+        case_key = key + (case['sample_id'],)
+        if key not in expected or case_key in seen or case['sample_id'] not in range(100):
+            raise ValueError(f'Duplicate or unexpected sample: {case_key}')
+        if case['status'] not in ('ok', 'failed'):
+            raise ValueError(f'Unknown sample status: {case_key}')
+        seen.add(case_key)
+        grouped[key].append(case)
+        by_run[case['run_key']].append(case)
+
+    verified_keys = set()
+    for run_key, meta in snapshot['runs'].items():
+        v = meta.get('verified')
+        if not v:
+            continue
+        cases = by_run[run_key]
+        ids = sorted(c['sample_id'] for c in cases)
+        if ids != sorted(v['sample_ids']):
+            raise ValueError(f'Verification/case IDs disagree: {run_key}')
+        ok = [c for c in cases if c['status'] == 'ok']
+        count = v.get('cases', v.get('verified_cases'))
+        success = v.get('successes', v.get('successful_cases'))
+        failures = v.get('failures', len(v.get('failed_cases', [])))
+        if (count, success, failures) != (len(cases), len(ok), len(cases) - len(ok)):
+            raise ValueError(f'Verification counts disagree: {run_key}')
+        if not cases:
+            raise ValueError(f'Empty verified run: {run_key}')
+        field = 'coefficient' if cases[0]['task'] == 'inverse' else 'solution'
+        values = [c['relative_l2_' + field] for c in ok]
+        if any(v is None or not math.isfinite(v) or v < 0 for v in values):
+            raise ValueError(f'Invalid successful-case error: {run_key}')
+        for c in cases:
+            if c['status'] == 'failed' and (c.get('relative_l2_coefficient') is not None or c.get('relative_l2_solution') is not None):
+                raise ValueError(f'Failed case has numeric metrics: {run_key}')
+        if cases[0]['method'] in ('DDIS', 'FunDPS'):
+            means = v['mean_relative_l2_successful_cases']
+            saved = means[0 if field == 'coefficient' else 1] if means is not None else None
+        else:
+            saved = v['successful_case_mean_relative_l2_' + field]
+        if values and (saved is None or not math.isclose(saved, statistics.fmean(values), rel_tol=1e-10, abs_tol=1e-12)):
+            raise ValueError(f'Verification mean disagrees: {run_key}')
+        if not values and saved is not None:
+            raise ValueError(f'Unexpected mean without successful cases: {run_key}')
+        verified_keys.add(run_key)
+
+    rows = []
+    for key in expected_cells():
+        method, pde, task, split = key
+        cases = grouped[key]
+        records = [c for c in cases if c['run_key'] in verified_keys]
+        field = 'coefficient' if task == 'inverse' else 'solution'
+        values = [c['relative_l2_' + field] for c in records if c['status'] == 'ok']
+        failed = [c['sample_id'] for c in records if c['status'] == 'failed']
+        prefix = 'evaluation_v2/' + PREFIXES[method] + '/' + '/'.join(key[1:]) + '/'
+        runs = [r for k, r in snapshot['runs'].items() if k.startswith(prefix)]
+        n = len(records)
+        status = ('complete_with_failures' if failed else 'complete') if n == 100 else ('partial' if runs else 'not_started')
+        avg = statistics.fmean(values) * 100 if values else None
+        row = dict(method=method, pde=pde, task=task, split=split, n=n,
+            n_finite=len(values), n_failed=len(failed),
+            mean_percent=avg if n == 100 and not failed else None,
+            finite_mean_percent=avg,
+            finite_std_percent=statistics.stdev(values) * 100 if len(values) >= 2 else None,
+            finite_median_percent=statistics.median(values) * 100 if values else None,
+            finite_p90_percent=quantile(values, .9) * 100 if values else None,
+            finite_max_percent=max(values) * 100 if values else None,
+            finite_over_100_percent=sum(v > 1 for v in values),
+            finite_over_1000_percent=sum(v > 10 for v in values),
+            failed_ids=','.join(map(str, sorted(failed))), source='latest_source_snapshot.json.gz',
+            expected_n=100, n_saved=len(cases), n_verified=n, n_unverified=len(cases)-n,
+            n_pending=100-n, status=status,
+            worker_failure_runs=sum(bool(r.get('worker_failure')) and not r.get('verified') for r in runs),
+            resource_review_runs=sum(bool(r.get('resource_needs_review')) and not r.get('verified') for r in runs),
+            verified_ids=','.join(map(str, sorted(c['sample_id'] for c in records))))
+        rows.append(row)
+    return rows
+
+
+def atomic_write(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.' + path.name, delete=False) as handle:
+        temporary = Path(handle.name)
+        try:
+            handle.write(data)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+    os.replace(temporary, path)
+
+
+def json_bytes(value):
+    return (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode()
+
+
+def csv_bytes(rows, fields=None):
+    fields = fields or list(dict.fromkeys(k for r in rows for k in r))
+    out = io.StringIO(newline='')
+    writer = csv.DictWriter(out, fieldnames=fields, extrasaction='ignore')
+    writer.writeheader()
+    writer.writerows(rows)
+    return out.getvalue().encode('utf-8-sig')
+
+
+def export(snapshot, paper, output):
+    rows = aggregate(snapshot)
+    paper_rows = parse_paper(paper)
+    totals = {}
+    for method in PREFIXES:
+        selected = [r for r in rows if r['method'] == method]
+        totals[method] = {key: sum(r[key] for r in selected) for key in
+            ('expected_n', 'n_saved', 'n_verified', 'n_failed', 'worker_failure_runs', 'resource_review_runs')}
+        totals[method].update(cells=len(selected), completed_cells=sum(r['n_verified'] == 100 for r in selected))
+    for r in rows + paper_rows:
+        r['captured_at'] = snapshot['captured_at']
+        r['metric_units'] = 'percent'
+        r['target_field'] = 'coefficient' if r['task'] == 'inverse' else 'solution'
+    all_rows = sorted(rows + paper_rows, key=lambda r: (PDES.index(r['pde']), r['task'], SPLITS.index(r['split']), METHODS.index(r['method'])))
+    summary = dict(captured_at=snapshot['captured_at'], generated_at=datetime.now(timezone.utc).isoformat(),
+        source_root=snapshot['root'], paper=str(paper), paper_sha256=sha(paper),
+        methods=totals, metric_rows=len(all_rows), warnings=snapshot.get('warnings', []),
+        notes=['All statistics use verified case records only; unfinished shards are counted under n_saved, not n_verified.',
+               'mean_percent is blank unless all 100 cases are verified with finite target errors.',
+               'finite_* statistics may describe a partial set or exclude failed cases; always inspect status and n_finite.',
+               'Finite extreme errors are uncapped. Worker/resource failures do not count as numeric case failures.',
+               'FM-FM uses the uncommented manuscript 1000-case main tables; other methods target 100 cases.',
+               'Each cell has 500 noiseless observations. DDIS/FunDPS cover Poisson and Helmholtz only.',
+               'Manuscript NS inverse ID/Smooth and Burgers Random ID/Smooth weights used first 100 test inputs for tuning.',
+               'Only metadata and saved verification summaries are checked; prediction arrays are not revalidated by this command.'])
+    report = ['# 最新采样统计', '', f'服务器快照时间：{snapshot["captured_at"]}', '',
+              '| 方法 | 已保存 | 已验证 / 计划 | 满 100 例的设置 | 数值失败 | 分片错误记录 |',
+              '|---|---:|---:|---:|---:|---:|']
+    for method, t in totals.items():
+        report.append(f'| {method} | {t["n_saved"]} | {t["n_verified"]}/{t["expected_n"]} | {t["completed_cells"]}/{t["cells"]} | {t["n_failed"]} | {t["worker_failure_runs"]} |')
+    report += ['', '数值失败也计入已验证数量，但不计入成功样本均值；分片错误记录可能正在重试。', '',
+        '所有误差列均为百分数。`mean_percent` 仅在完整 100 例均有有限误差时填写；`finite_mean_percent` 等统计列仅使用已验证且成功的样本，可能来自未完成设置。必须结合 `status` 和 `n_finite` 阅读。', '',
+        'FM-FM 为论文正文的 1000 例结果，其他方法计划每格 100 例。DDIS/FunDPS 的 Darcy、NS、Burgers 没有已训练模型，本表不将其计入待采样任务。', '',
+        '论文 NS inverse ID/Smooth、Burgers Random ID/Smooth 曾用相应测试集前 100 例调观测权重。各方法计算预算也不同，因此本表不是严格配对、预算匹配的算法比较。', '']
+    for method in ('OFM', 'FunDPS'):
+        report += [f'## {method} 逐项进度', '', '| 方程 | 任务 | 分布 | 已保存 | 已验证 / 100 | 失败 | 状态 | 已验证成功样本均值（%） |', '|---|---|---|---:|---:|---:|---|---:|']
+        for r in rows:
+            if r['method'] != method:
+                continue
+            avg = '—' if r['finite_mean_percent'] is None else f'{r["finite_mean_percent"]:.6g}'
+            report.append('| ' + ' | '.join(map(str, [r['pde'], r['task'], r['split'], r['n_saved'], r['n_verified'], r['n_failed'], r['status'], avg])) + ' |')
+    report += ['', '来源：`latest_source_snapshot.json.gz`；完整统计：`metrics.csv`；进度：`progress.csv`；统计口径与来源哈希：`latest_summary.json`。',
+               '脚本只读取结果元数据，核对样本编号、去重、验证计数与误差均值，不重新采样或重新加载预测数组。', '']
+    # Build and validate everything before replacing any output. Each file is atomic.
+    files = {
+        'latest_source_snapshot.json.gz': gzip.compress(json_bytes(snapshot)),
+        'metrics.csv': csv_bytes(all_rows), 'metrics.json': json_bytes(all_rows),
+        'progress.csv': csv_bytes(rows, ['method', 'pde', 'task', 'split', 'status', 'expected_n',
+            'n_saved', 'n_verified', 'n_finite', 'n_failed', 'n_unverified', 'n_pending',
+            'worker_failure_runs', 'resource_review_runs', 'captured_at']),
+        'latest_summary.json': json_bytes(summary), 'live_report.md': '\n'.join(report).encode()}
+    for name, data in files.items():
+        atomic_write(output / name, data)
+    return summary
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--host', default='server216')
+    parser.add_argument('--root', default=DEFAULT_ROOT, help='Server result root')
+    parser.add_argument('--remote-script', default=REMOTE_SCRIPT)
+    parser.add_argument('--ssh-control-path', help='Optional SSH multiplex socket')
+    parser.add_argument('--paper', type=Path, default=Path.home() / 'C04Papers/fm4pde_jmlr/fm4pde_jmlr_revision.tex')
+    parser.add_argument('--output', type=Path, default=REPO / 'reports/five_method_comparison_20260921')
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument('--snapshot', type=Path, help='Recompute offline from a saved JSON or JSON.gz snapshot')
+    source.add_argument('--local-root', type=Path, help='Read a locally mounted result root without SSH')
+    source.add_argument('--collect', action='store_true', help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if args.collect:
+        sys.stdout.write(json.dumps(collect(args.root), allow_nan=False))
+        return
+    if not args.paper.is_file():
+        parser.error(f'Manuscript missing: {args.paper}; use --paper PATH')
+    if args.snapshot:
+        opener = gzip.open if args.snapshot.suffix == '.gz' else open
+        with opener(args.snapshot, 'rt') as handle:
+            snapshot = json.load(handle)
+    elif args.local_root:
+        snapshot = collect(args.local_root)
+    else:
+        command = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+                   '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3']
+        socket = args.ssh_control_path
+        if socket is None:
+            for candidate in ('/tmp/ddis216-recovered-20260919', '/tmp/ddis216-20260919-ssh'):
+                if Path(candidate).exists():
+                    socket = candidate
+                    break
+        if socket:
+            command += ['-S', socket]
+        command += [args.host, shlex.join(['python3', args.remote_script, '--collect', '--root', args.root])]
+        print(f'Reading latest metadata from {args.host} ...', flush=True)
+        process = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        if process.returncode:
+            raise RuntimeError(f'SSH collection failed; existing CSV unchanged.\n{process.stderr.strip()}')
+        snapshot = json.loads(process.stdout)
+    summary = export(snapshot, args.paper.expanduser().resolve(), args.output.expanduser().resolve())
+    print('Snapshot:', summary['captured_at'])
+    for method, counts in summary['methods'].items():
+        print(f'{method:8s} saved={counts["n_saved"]:4d}  verified={counts["n_verified"]:4d}/{counts["expected_n"]}'
+              f'  complete settings={counts["completed_cells"]}/{counts["cells"]}'
+              f'  numeric failures={counts["n_failed"]}  shard errors={counts["worker_failure_runs"]}')
+    print(f'Wrote {summary["metric_rows"]} rows: {args.output.resolve() / "metrics.csv"}')
+    print('Progress:', args.output.resolve() / 'progress.csv')
+    if summary['warnings']:
+        print(f'{len(summary["warnings"])} changing files were skipped; see latest_summary.json')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+        print(f'ERROR: {error}', file=sys.stderr)
+        sys.exit(1)
