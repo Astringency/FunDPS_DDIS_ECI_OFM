@@ -3,6 +3,7 @@ import copy
 from pathlib import Path
 import sys
 import unittest
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'adapters'))
 from summarize_current_results import aggregate
@@ -87,6 +88,20 @@ class CurrentResultsTest(unittest.TestCase):
         self.assertEqual((row['n_saved'], row['n_verified'], row['n_failed']), (5, 0, 0))
         self.assertEqual(row['worker_failure_runs'], 1)
         self.assertIsNone(row['finite_mean_percent'])
+
+    def test_retry_status_does_not_clear_unresolved_error_or_verify_partial_cases(self):
+        value = snapshot(range(5), verified=False, worker_failure=True)
+        meta = next(iter(value['runs'].values()))
+        for state, active, queued, failed, unassigned in [
+            ('running', 1, 0, 0, 0), ('queued', 0, 1, 0, 0),
+            ('failed', 0, 0, 1, 0), ('verified', 0, 1, 0, 0)]:
+            meta['recovery'] = dict(state=state, updated_at=time.time())
+            row = target(value)
+            self.assertEqual((row['worker_failure_runs'], row['n_verified'], row['n_failed']), (1, 0, 0))
+            self.assertEqual((row['recovery_active_shards'], row['recovery_queued_shards'],
+                row['recovery_failed_shards'], row['recovery_unassigned_shards']), (active, queued, failed, unassigned))
+        meta['recovery'] = dict(state='running', updated_at=time.time()-181)
+        self.assertEqual(target(value)['recovery_unassigned_shards'], 1)
 
     def test_numeric_failures_preserve_denominator(self):
         row = target(snapshot(failed=(99,)))

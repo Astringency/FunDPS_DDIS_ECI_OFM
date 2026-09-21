@@ -76,6 +76,7 @@ def collect(root, include_repairs=True):
             meta = dict(method=method, pde=pde, task=task, split=split)
             for filename, key in [('run.json', 'run'), ('verified_summary.json', 'verified'),
                                   ('worker_failure.json', 'worker_failure'),
+                                  ('recovery_state.json', 'recovery'),
                                   ('resource_needs_review.json', 'resource_needs_review')]:
                 path = folder / filename
                 if path.exists():
@@ -109,6 +110,17 @@ def quantile(values, q):
     loc = (len(ordered) - 1) * q
     lower, upper = math.floor(loc), math.ceil(loc)
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (loc - lower)
+
+
+def recovery_status(meta, snapshot):
+    if meta.get('verified'):
+        return 'verified'
+    record = meta.get('recovery', {})
+    state = record.get('state', 'unassigned')
+    now = datetime.fromisoformat(snapshot['captured_at']).timestamp() if snapshot.get('captured_at') else time.time()
+    if state in ('running', 'validating', 'queued', 'verified') and now - record.get('updated_at', 0) > 180:
+        return 'stale'
+    return 'awaiting_sync' if state == 'verified' else state
 
 
 def aggregate(snapshot):
@@ -171,6 +183,8 @@ def aggregate(snapshot):
         failed = [c['sample_id'] for c in records if c['status'] == 'failed']
         runs = [r for r in snapshot['runs'].values()
                 if tuple(r[f] for f in ('method', 'pde', 'task', 'split')) == key]
+        recovery_states = [recovery_status(r, snapshot) for r in runs
+            if r.get('worker_failure') and not r.get('verified')]
         n = len(records)
         status = ('complete_with_failures' if failed else 'complete') if n == 100 else ('partial' if runs else 'not_started')
         avg = statistics.fmean(values) * 100 if values else None
@@ -188,6 +202,11 @@ def aggregate(snapshot):
             expected_n=100, n_saved=len(cases), n_verified=n, n_unverified=len(cases)-n,
             n_pending=100-n, status=status,
             worker_failure_runs=sum(bool(r.get('worker_failure')) and not r.get('verified') for r in runs),
+            verified_shards=sum(bool(r.get('verified')) for r in runs) if method == 'OFM' else 0,
+            recovery_active_shards=sum(s in ('running', 'validating') for s in recovery_states),
+            recovery_queued_shards=sum(s in ('queued', 'awaiting_sync') for s in recovery_states),
+            recovery_failed_shards=recovery_states.count('failed'),
+            recovery_unassigned_shards=sum(s not in ('running', 'validating', 'queued', 'awaiting_sync', 'failed') for s in recovery_states),
             resource_review_runs=sum(bool(r.get('resource_needs_review')) and not r.get('verified') for r in runs),
             verified_ids=','.join(map(str, sorted(c['sample_id'] for c in records))),
             result_version=';'.join(sorted({r.get('result_version', 'original') for r in runs})) or 'original',
@@ -238,7 +257,8 @@ def export(snapshot, paper, output, original_only=False):
     for method in PREFIXES:
         selected = [r for r in rows if r['method'] == method]
         totals[method] = {key: sum(r[key] for r in selected) for key in
-            ('expected_n', 'n_saved', 'n_verified', 'n_finite', 'n_failed', 'worker_failure_runs', 'resource_review_runs')}
+            ('expected_n', 'n_saved', 'n_verified', 'n_finite', 'n_failed', 'worker_failure_runs', 'resource_review_runs',
+             'verified_shards', 'recovery_active_shards', 'recovery_queued_shards', 'recovery_failed_shards', 'recovery_unassigned_shards')}
         totals[method].update(cells=len(selected), completed_cells=sum(r['n_verified'] == 100 for r in selected),
             original_n_failed=sum(r['original_n_failed'] for r in selected),
             repaired_settings=sum(any(v.startswith('repair_') for v in r['result_version'].split(';')) for r in selected))
@@ -275,6 +295,7 @@ def export(snapshot, paper, output, original_only=False):
     for method, t in totals.items():
         report.append(f'| {method} | {t["n_saved"]} | {t["n_verified"]}/{t["expected_n"]} | {t["completed_cells"]}/{t["cells"]} | {t["n_failed"]} | {t["worker_failure_runs"]} |')
     report += ['', '数值失败也计入已验证数量，但不计入成功样本均值；分片错误记录可能正在重试。', '',
+        'complete settings 仅计入已经核验满 100 例的设置；OFM 每个分片为 10 例。分片错误在完整核验前继续保留，恢复中的错误另列 recovering/queued；逐分片状态见 shard_recovery.csv。', '',
         'verified 表示记录已核验，不代表采样成功或精度达标。成功记录由独立核验脚本读取预测数组、检查样本/观测位置并重算误差；失败记录核对状态及缺失指标。汇总命令只交叉核对这些核验证据。', '',
         'ECI-OFM、FM-OFM 修正版按完整 100 例设置替换；FunDPS 按用户要求仅修复 Poisson forward/Rough 的样本 6，其引导权重为 10000，其他 99 例保留原权重 20000。CSV 的 result_version、sampling_parameters_json、selection_note 标注范围和参数；original_n_failed 保留原始失败数。这是失败触发的参数调整，不是独立验证集选参。', '',
         '所有误差列均为百分数。`mean_percent` 仅在完整 100 例均有有限误差时填写；`finite_mean_percent` 等统计列仅使用已验证且成功的样本，可能来自未完成设置。必须结合 `status` 和 `n_finite` 阅读。', '',
@@ -290,13 +311,25 @@ def export(snapshot, paper, output, original_only=False):
     report += ['', '来源：`latest_source_snapshot.json.gz`；完整统计：`metrics.csv`；进度：`progress.csv`；统计口径与来源哈希：`latest_summary.json`。',
                '脚本只读取结果元数据，核对样本编号、去重、验证计数与误差均值，不重新采样或重新加载预测数组。', '']
     # Build and validate everything before replacing any output. Each file is atomic.
+    recovery_rows = []
+    for key, meta in snapshot['runs'].items():
+        if meta['method'] != 'OFM' or not meta.get('worker_failure') or meta.get('verified'):
+            continue
+        state = meta.get('recovery', {})
+        recovery_rows.append(dict(pde=meta['pde'], task=meta['task'], split=meta['split'],
+            shard=key, state=recovery_status(meta, snapshot), host=state.get('source_host', state.get('host')),
+            pid=state.get('pid'), last_step=state.get('last_step'),
+            saved=state.get('saved', sum(c['run_key'] == key for c in snapshot['cases'])),
+            captured_at=snapshot['captured_at']))
     files = {
         'latest_source_snapshot.json.gz': gzip.compress(json_bytes(snapshot)),
         'metrics.csv': csv_bytes(all_rows), 'metrics.json': json_bytes(all_rows),
         'metrics_original.csv': csv_bytes(original_all_rows),
+        'shard_recovery.csv': csv_bytes(recovery_rows, ['pde', 'task', 'split', 'shard', 'state', 'host', 'pid', 'last_step', 'saved', 'captured_at']),
         'progress.csv': csv_bytes(rows, ['method', 'pde', 'task', 'split', 'status', 'expected_n',
             'n_saved', 'n_verified', 'n_finite', 'n_failed', 'n_unverified', 'n_pending',
-            'worker_failure_runs', 'resource_review_runs', 'result_version', 'original_n_failed', 'captured_at']),
+            'worker_failure_runs', 'verified_shards', 'recovery_active_shards', 'recovery_queued_shards',
+            'recovery_failed_shards', 'recovery_unassigned_shards', 'resource_review_runs', 'result_version', 'original_n_failed', 'captured_at']),
         'latest_summary.json': json_bytes(summary), 'live_report.md': '\n'.join(report).encode()}
     for name, data in files.items():
         atomic_write(output / name, data)
@@ -352,13 +385,19 @@ def main():
     print('Snapshot:', summary['captured_at'])
     print(f'Result selection: {summary["result_selection"]}; repaired settings={summary["repaired_settings"]}')
     print('verified = audited records (including documented failures); successful = finite predictions, not an accuracy threshold.')
+    print('complete settings = all 100 cases audited; OFM uses 10-case shards. Shard errors remain counted until recovery is verified.')
     for method, counts in summary['methods'].items():
         print(f'{method:8s} saved={counts["n_saved"]:4d}  verified={counts["n_verified"]:4d}/{counts["expected_n"]}'
               f'  complete settings={counts["completed_cells"]}/{counts["cells"]}'
               f'  successful={counts["n_finite"]}'
               f'  numeric failures={counts["n_failed"]}  shard errors={counts["worker_failure_runs"]}'
+              + (f'  [recovering={counts["recovery_active_shards"]}; queued={counts["recovery_queued_shards"]};'
+                 f' retry failed={counts["recovery_failed_shards"]}; unassigned/stale={counts["recovery_unassigned_shards"]}]'
+                 if counts['worker_failure_runs'] else '')
               + (f'  [original failures={counts["original_n_failed"]}; repaired settings={counts["repaired_settings"]}]'
                  if counts['repaired_settings'] else ''))
+        if method == 'OFM':
+            print(f'         verified shards={counts["verified_shards"]}/{counts["expected_n"] // 10}')
     print(f'Wrote {summary["metric_rows"]} rows: {args.output.resolve() / "metrics.csv"}')
     print('Progress:', args.output.resolve() / 'progress.csv')
     print('Original configurations:', args.output.resolve() / 'metrics_original.csv')

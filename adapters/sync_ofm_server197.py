@@ -9,6 +9,7 @@ import time
 REMOTE = '/research_data/users/zhangxifeng/C01Python/FM4PDE/outputs/ofm_sampling_20260921'
 CENTRAL = '/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919'
 SSH216 = ['ssh', '-S', '/tmp/ddis216-reallocation-20260921', '-o', 'BatchMode=yes', 'server216']
+STATUS_SCRIPT = '/research_data/users/zhangxifeng/C01Python/DDIS_comparison_20260919/orchestration/adapters/ofm_queue_status.py'
 
 
 def main():
@@ -19,6 +20,25 @@ def main():
     a.cache.mkdir(parents=True, exist_ok=True)
     while True:
         try:
+            status = subprocess.check_output(['ssh', '-o', 'BatchMode=yes', 'server197',
+                shlex.join(['python3', STATUS_SCRIPT, '--root', REMOTE])], text=True)
+            inventory = json.loads(status)
+            (a.cache / 'recovery_inventory.json').write_text(json.dumps(inventory, indent=2))
+            code = '''import json,pathlib,time
+root=pathlib.Path(ROOT)
+inventory=INVENTORY
+for record in inventory['shards']:
+ relative=pathlib.PurePosixPath(record['relative'])
+ assert str(relative).startswith('evaluation_v2/ofm/ofm/') and '..' not in relative.parts
+ dest=root/relative
+ if (dest/'verified_summary.json').exists(): continue
+ dest.mkdir(parents=True,exist_ok=True)
+ record.update(updated_at=time.time(),source_host='server197',source_captured_at=inventory['captured_at'])
+ temporary=dest/'recovery_state.partial.json'
+ temporary.write_text(json.dumps(record,indent=2))
+ temporary.replace(dest/'recovery_state.json')
+'''.replace('ROOT', repr(CENTRAL)).replace('INVENTORY', repr(inventory))
+            subprocess.run(SSH216 + ['python3 -c ' + shlex.quote(code)], check=True)
             subprocess.run(['rsync', '-a', '-e', 'ssh -o BatchMode=yes',
                 f'server197:{REMOTE}/assignment.json', str(a.cache / 'assignment.json')], check=True)
             subprocess.run(['rsync', '-a', '-e', 'ssh -o BatchMode=yes',
