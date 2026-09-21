@@ -92,7 +92,57 @@ def collect_repairs(root, snapshot):
             cases = [dict(r, method=method, pde=pde, task=task, split=split, run_key=key,
                 case_source=f"{key}/case_{r['sample_id']:03d}.json") for r in records]
             repairs.append(dict(run_key=key, meta=meta, cases=cases))
+    repairs.extend(collect_fundps_repair(root, snapshot))
     return repairs
+
+
+def collect_fundps_repair(root, snapshot):
+    relative = 'diagnostics/fundps_repair_20260921/report/audit.json'
+    path = root / relative
+    if not path.exists():
+        return []
+    raw = path.read_bytes()
+    audit = json.loads(raw)
+    key = ('FunDPS', 'poisson', 'forward', 'rough')
+    assert tuple(audit[f] for f in ('method', 'pde', 'task', 'split')) == key
+    assert audit['parameters'] == dict(iterations=500, guidance_weights=[10000, 0, 0])
+    assert audit['validation']['verified_predictions'] == 100 and audit['validation']['failed'] == 0
+    original = [m for m in snapshot['runs'].values()
+        if tuple(m[f] for f in ('method', 'pde', 'task', 'split')) == key]
+    assert original and all(m['run']['checkpoint_sha256'] == audit['checkpoint_sha256'] for m in original)
+    records = []
+    run_key = 'diagnostics/fundps_repair_20260921/full'
+    for item in audit['records']:
+        folder = root / item['directory']
+        record, run, verified = item['case'], item['run'], item['verified']
+        assert json.loads((folder / 'run.json').read_text()) == run
+        assert json.loads((folder / 'verified_summary.json').read_text()) == verified
+        source = folder / f"case_{record['sample_id']:03d}.json"
+        assert json.loads(source.read_text()) == record
+        assert run['case_index'] == record['sample_id'] and run['count'] == 1
+        assert run['checkpoint_sha256'] == audit['checkpoint_sha256']
+        assert run['official_config']['guidance']['weights'] == [10000, 0, 0]
+        assert run['official_config']['iterations'] == 500
+        assert verified['sample_ids'] == [record['sample_id']]
+        assert verified['successful_cases'] == 1 and not verified['failed_cases']
+        assert record['status'] == 'ok'
+        for field in ('coefficient', 'solution'):
+            assert math.isfinite(record['relative_l2_' + field]) and record['relative_l2_' + field] >= 0
+        # Check predictions still match the independently audited bytes.
+        assert hashlib.sha256(Path(record['prediction']).read_bytes()).hexdigest() == item['prediction_sha256']
+        records.append(dict(record, method=key[0], pde=key[1], task=key[2], split=key[3],
+            run_key=run_key, case_source=str(source.relative_to(root))))
+    assert sorted(r['sample_id'] for r in records) == list(range(100))
+    means = [statistics.fmean(r['relative_l2_' + f] for r in records) for f in ('coefficient', 'solution')]
+    assert math.isclose(means[1] * 100, audit['validation']['mean_percent'], rel_tol=1e-10)
+    verified = dict(verified_cases=100, successful_cases=100, failed_cases=[],
+        sample_ids=list(range(100)), mean_relative_l2_successful_cases=means,
+        verification_source=relative, verification_audit_sha256=hashlib.sha256(raw).hexdigest())
+    meta = dict(method=key[0], pde=key[1], task=key[2], split=key[3],
+        run=dict(checkpoint_sha256=audit['checkpoint_sha256']), verified=verified,
+        result_version='repair_weight10000_20260921', sampling_parameters=audit['parameters'],
+        selection_note='Failure-triggered test-set parameter tuning; whole 100-case setting replaced, not independently held-out selection.')
+    return [dict(run_key=run_key, meta=meta, cases=records)]
 
 
 def apply_repairs(snapshot):

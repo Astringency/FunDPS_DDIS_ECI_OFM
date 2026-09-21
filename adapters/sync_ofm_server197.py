@@ -8,7 +8,7 @@ import time
 
 REMOTE = '/research_data/users/zhangxifeng/C01Python/FM4PDE/outputs/ofm_sampling_20260921'
 CENTRAL = '/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919'
-SSH216 = ['ssh', '-S', '/tmp/ddis216-recovered-20260919', '-o', 'BatchMode=yes', 'server216']
+SSH216 = ['ssh', '-S', '/tmp/ddis216-reallocation-20260921', '-o', 'BatchMode=yes', 'server216']
 
 
 def main():
@@ -29,7 +29,7 @@ def main():
                 # Stage completely before atomic publication; preserve original errors.
                 incoming = CENTRAL + '/jobs/ofm_server197_20260921/incoming/' + relative
                 subprocess.run(SSH216 + ['mkdir -p ' + shlex.quote(incoming)], check=True)
-                subprocess.run(['rsync', '-a', '-e', 'ssh -S /tmp/ddis216-recovered-20260919 -o BatchMode=yes',
+                subprocess.run(['rsync', '-a', '-e', 'ssh -S /tmp/ddis216-reallocation-20260921 -o BatchMode=yes',
                     str(folder) + '/', 'server216:' + incoming + '/'], check=True)
                 code = '''import json, pathlib
 root=pathlib.Path(ROOT)
