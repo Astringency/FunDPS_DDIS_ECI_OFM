@@ -17,9 +17,8 @@ while True:
     for failure in root.glob('*/*/*/shard_*/worker_failure.json'):
         folder = failure.parent
         if (folder / 'verified_summary.json').exists() or (folder / 'resource_needs_review.json').exists(): continue
-        log = folder / 'sampling.log'
-        if not log.exists(): continue
-        text = log.read_text(errors='replace').lower()
+        logs = [folder / name for name in ('sampling.log', 'profile.log')]
+        text = '\n'.join(log.read_text(errors='replace') for log in logs if log.exists()).lower()
         if 'out of memory' in text or 'ofm_resource_limit' in text:
             pending.append(folder)
     if not pending:
