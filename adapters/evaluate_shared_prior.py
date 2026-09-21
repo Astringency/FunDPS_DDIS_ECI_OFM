@@ -116,10 +116,17 @@ def main(args):
     from resource_profile_cache import reuse_profile
     if reuse_profile(args.output, config_record):
         return
+    native_slot = None
+    if args.method == 'ofm':
+        from ofm_resource_guard import acquire_native_slot
+        native_slot = acquire_native_slot(args.assets.parent.parent)
     torch.manual_seed(args.seed)
     if args.device.startswith('cuda'):
         torch.cuda.reset_peak_memory_stats()
     net, normalizer, payload, noise, operator_prior = load_prior(args, channels)
+    if args.method == 'ofm':
+        from ofm_resource_guard import install_guard
+        memory_guard = install_guard(operator_prior)
     if args.method == 'eci':
         FFM, DirichletCondition = load_eci(args.eci)
     atomic_json(args.output / 'model_loaded.json', {

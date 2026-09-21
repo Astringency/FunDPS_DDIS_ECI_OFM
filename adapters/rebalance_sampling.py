@@ -58,7 +58,7 @@ while True:
         gpu, slot = info['gpu'], info['slot']
         sessions = subprocess.check_output(['tmux', 'list-sessions', '-F', '#{session_name}'], text=True).splitlines()
         native_on_gpu = sum(bool(re.search(rf'native_ofm.*_gpu{gpu}(?:_|$)', s)) for s in sessions)
-        if native_on_gpu >= 2: continue
+        if native_on_gpu >= 1: continue
         free = int(subprocess.check_output(['nvidia-smi', '-i', str(gpu), '--query-gpu=memory.free', '--format=csv,noheader,nounits']))
         if free < 40960 or os.getloadavg()[0] >= 110: continue
         name = f'ddis_native_ofm_rebalanced_gpu{gpu}_slot{slot}'
