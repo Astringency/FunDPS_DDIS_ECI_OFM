@@ -23,7 +23,12 @@ def configure(prior, args):
     record = dict(activation_checkpoint=bool(enabled),
         implementation='torch.utils.checkpoint.checkpoint(use_reentrant=False, preserve_rng_state=True)',
         changes_sampler_parameters=False, policy_source=str(policy) if policy.exists() else None)
-    (args.output / 'memory_runtime.json').write_text(json.dumps(record, indent=2))
+    path = args.output / 'memory_runtime.json'
+    if path.exists() and json.loads(path.read_text()) != record:
+        history = args.output / 'memory_runtime_history'
+        history.mkdir(exist_ok=True)
+        (history / f'previous_{len(list(history.iterdir()))}.json').write_bytes(path.read_bytes())
+    path.write_text(json.dumps(record, indent=2))
 
 
 if __name__ == '__main__':

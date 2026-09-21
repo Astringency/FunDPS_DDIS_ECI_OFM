@@ -55,6 +55,11 @@ def main():
         (dest / 'verification.exit').write_text(str(result.returncode))
         if result.returncode:
             raise RuntimeError(f'Independent validation failed: {dest}')
+        failure = dest / 'worker_failure.json'
+        if failure.exists():
+            audit = dest / 'resource_retry_audit'
+            audit.mkdir(exist_ok=True)
+            failure.rename(audit / f'recovered_failure_{time.time_ns()}.json')
         print('Verified:', dest, flush=True)
     (a.root / f'gpu_{a.gpu}_completed.json').write_text(json.dumps(dict(time=time.time())))
 
