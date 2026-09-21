@@ -267,6 +267,26 @@ shards are saved but do not enter error statistics until verification finishes.
 This command checks metadata, IDs and saved verification means; it does not
 revalidate all prediction arrays.
 
+`verified` counts audited records, including documented numerical failures.
+It is not a success count or an accuracy threshold. The console also prints
+`successful` for verified cases with finite predictions. Shared-prior workers
+normally verify a complete 10-case shard; saved records from an unfinished or
+resource-interrupted shard are not yet included in verified statistics.
+
+The default report now selects six independently audited **whole-setting**
+repair versions: ECI-OFM Poisson inverse/Rough (200 steps, one mixing iteration,
+resample step 5), and FM-OFM Helmholtz inverse ID/Smooth/Rough, NS inverse/Rough,
+and Burgers/Rough (gradient clipping threshold 50). All 100 cases in each
+setting are replaced together, including cases whose error got worse.
+These parameters were chosen after observing failures, not on an independent
+held-out validation set. `result_version`, `sampling_parameters_json`,
+`selection_note`, and `verification_sources` identify the selected versions.
+The original configurations remain in **`metrics_original.csv`**, and
+`original_n_failed` retains their failure counts in the current CSV.
+Use `--original-only` to report the original configurations in `metrics.csv`.
+Collection checks that repaired case records and configurations still match
+the independent audit; it refuses a changed or incomplete repair.
+
 An SSH/read/validation failure exits nonzero instead of silently using stale
 data. Existing CSVs are replaced only after collection and validation succeed.
 To reproduce a saved snapshot offline, add
