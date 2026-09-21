@@ -291,6 +291,38 @@ Use `--original-only` to report the original configurations in `metrics.csv`.
 Collection checks that repaired case records and configurations still match
 the independent audit; it refuses a changed or incomplete repair.
 
+At the user's subsequent request, FunDPS has one explicitly scoped exception:
+only Poisson forward/Rough sample 6 is replaced. The original run reproduces a
+NaN at step 325; the unchanged official solver with observation weight 10000
+(previously 20000) completes all 500 steps, with solution relative L2 18.328854%.
+The other 99 cases remain byte-for-byte original results. The affected CSV row
+explicitly identifies this mixed configuration. The proposed full-setting rerun
+was cancelled and its partial diagnostics are excluded from the report.
+
+OFM now uses two admitted sampling processes per GPU on server216 (16 total),
+plus two exclusive Darcy-forward queues on server197. No server193 job is used.
+Server197 results live under
+`/research_data/users/zhangxifeng/C01Python/FM4PDE/outputs/ofm_sampling_20260921`.
+Thirty Darcy-forward shards are reserved centrally, preserving 18 previously
+successful cases. The local tmux session `ddis_ofm_sync197_20260921` returns
+verified complete shards to server216; the single summary command remains the
+same. Raw interrupted shards are archived before publication, not overwritten.
+To run one manual synchronization after a local restart:
+
+```bash
+python3 ~/C01Python/DDIS_comparison_20260919/adapters/sync_ofm_server197.py \
+  --cache ~/C01Python/DDIS_comparison_20260919/reports/resource_reallocation_20260921/server197_cache --once
+```
+
+Some Darcy-forward trajectories exceed an exclusive 80GB GPU. Server197 alone
+therefore enables PyTorch non-reentrant activation recomputation around the
+unchanged official FNO forward. Model outputs and nested gradients were verified
+bitwise equal; two native one-step sampler probes were also bitwise equal.
+Probe peak allocated memory decreased from 15,072,269,312 to 1,597,429,248 bytes.
+The complete 100-step sampler, ODE tolerances, random seeds, observation masks,
+and learned weights are unchanged. `memory_runtime.json` records this runtime
+policy; this preflight measurement is not a bound on all future trajectories.
+
 An SSH/read/validation failure exits nonzero instead of silently using stale
 data. Existing CSVs are replaced only after collection and validation succeed.
 To reproduce a saved snapshot offline, add
