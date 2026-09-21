@@ -3,6 +3,7 @@
 
 Uses only the Python standard library. Reads small JSON records; never runs
 sampling, imports a model, or modifies any server-side evaluation result.
+Defaults to audited whole-setting repairs and also exports original results.
 """
 import argparse
 from collections import Counter, defaultdict
@@ -22,6 +23,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+from verified_repair_results import apply_repairs, collect_repairs
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_ROOT = '/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919'
@@ -57,11 +60,11 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def collect(root):
+def collect(root, include_repairs=True):
     root = Path(root)
     if not (root / 'evaluation_v2').is_dir():
         raise FileNotFoundError(f'Evaluation root not found: {root}')
-    result = dict(schema_version=1, collection_started_at=datetime.now(timezone.utc).isoformat(),
+    result = dict(schema_version=2, collection_started_at=datetime.now(timezone.utc).isoformat(),
                   root=str(root), runs={}, cases=[], warnings=[])
     for method, pde, task, split in expected_cells():
         cell = root / 'evaluation_v2' / PREFIXES[method] / pde / task / split
@@ -96,6 +99,7 @@ def collect(root):
                     continue
                 result['cases'].append(dict(case, method=method, pde=pde, task=task,
                     split=split, run_key=run_key, case_source=str(path.relative_to(root))))
+    result['repairs'] = collect_repairs(root, result) if include_repairs else []
     result['captured_at'] = datetime.now(timezone.utc).isoformat()
     return result
 
@@ -215,8 +219,8 @@ def aggregate(snapshot):
         field = 'coefficient' if task == 'inverse' else 'solution'
         values = [c['relative_l2_' + field] for c in records if c['status'] == 'ok']
         failed = [c['sample_id'] for c in records if c['status'] == 'failed']
-        prefix = 'evaluation_v2/' + PREFIXES[method] + '/' + '/'.join(key[1:]) + '/'
-        runs = [r for k, r in snapshot['runs'].items() if k.startswith(prefix)]
+        runs = [r for r in snapshot['runs'].values()
+                if tuple(r[f] for f in ('method', 'pde', 'task', 'split')) == key]
         n = len(records)
         status = ('complete_with_failures' if failed else 'complete') if n == 100 else ('partial' if runs else 'not_started')
         avg = statistics.fmean(values) * 100 if values else None
@@ -235,7 +239,12 @@ def aggregate(snapshot):
             n_pending=100-n, status=status,
             worker_failure_runs=sum(bool(r.get('worker_failure')) and not r.get('verified') for r in runs),
             resource_review_runs=sum(bool(r.get('resource_needs_review')) and not r.get('verified') for r in runs),
-            verified_ids=','.join(map(str, sorted(c['sample_id'] for c in records))))
+            verified_ids=','.join(map(str, sorted(c['sample_id'] for c in records))),
+            result_version=';'.join(sorted({r.get('result_version', 'original') for r in runs})) or 'original',
+            sampling_parameters_json=json.dumps([r['sampling_parameters'] for r in runs if 'sampling_parameters' in r], sort_keys=True),
+            selection_note=';'.join(sorted({r['selection_note'] for r in runs if r.get('selection_note')})),
+            verification_sources=';'.join(sorted({r['verified']['verification_source'] for r in runs
+                if r.get('verified', {}).get('verification_source')})))
         rows.append(row)
     return rows
 
@@ -265,23 +274,37 @@ def csv_bytes(rows, fields=None):
     return out.getvalue().encode('utf-8-sig')
 
 
-def export(snapshot, paper, output):
-    rows = aggregate(snapshot)
+def export(snapshot, paper, output, original_only=False):
+    original_rows = aggregate(snapshot)
+    rows = aggregate(snapshot if original_only else apply_repairs(snapshot))
+    original_by_key = {tuple(r[k] for k in ('method', 'pde', 'task', 'split')): r for r in original_rows}
+    for r in rows:
+        original = original_by_key[tuple(r[k] for k in ('method', 'pde', 'task', 'split'))]
+        r['original_n_failed'] = original['n_failed']
+        r['original_finite_over_1000_percent'] = original['finite_over_1000_percent']
     paper_rows = parse_paper(paper)
     totals = {}
     for method in PREFIXES:
         selected = [r for r in rows if r['method'] == method]
         totals[method] = {key: sum(r[key] for r in selected) for key in
-            ('expected_n', 'n_saved', 'n_verified', 'n_failed', 'worker_failure_runs', 'resource_review_runs')}
-        totals[method].update(cells=len(selected), completed_cells=sum(r['n_verified'] == 100 for r in selected))
-    for r in rows + paper_rows:
+            ('expected_n', 'n_saved', 'n_verified', 'n_finite', 'n_failed', 'worker_failure_runs', 'resource_review_runs')}
+        totals[method].update(cells=len(selected), completed_cells=sum(r['n_verified'] == 100 for r in selected),
+            original_n_failed=sum(r['original_n_failed'] for r in selected),
+            repaired_settings=sum(r['result_version'].startswith('repair_') for r in selected))
+    for r in rows + original_rows + paper_rows:
         r['captured_at'] = snapshot['captured_at']
         r['metric_units'] = 'percent'
         r['target_field'] = 'coefficient' if r['task'] == 'inverse' else 'solution'
     all_rows = sorted(rows + paper_rows, key=lambda r: (PDES.index(r['pde']), r['task'], SPLITS.index(r['split']), METHODS.index(r['method'])))
+    original_all_rows = sorted(original_rows + paper_rows, key=lambda r: (PDES.index(r['pde']), r['task'], SPLITS.index(r['split']), METHODS.index(r['method'])))
+    warnings = list(snapshot.get('warnings', []))
+    if not original_only and 'repairs' not in snapshot:
+        warnings.append('This older snapshot contains no repair evidence; retaining original settings.')
     summary = dict(captured_at=snapshot['captured_at'], generated_at=datetime.now(timezone.utc).isoformat(),
         source_root=snapshot['root'], paper=str(paper), paper_sha256=sha(paper),
-        methods=totals, metric_rows=len(all_rows), warnings=snapshot.get('warnings', []),
+        methods=totals, metric_rows=len(all_rows), warnings=warnings,
+        result_selection='original_only' if original_only else 'audited_whole_setting_repairs',
+        repaired_settings=sum(t['repaired_settings'] for t in totals.values()),
         notes=['All statistics use verified case records only; unfinished shards are counted under n_saved, not n_verified.',
                'mean_percent is blank unless all 100 cases are verified with finite target errors.',
                'finite_* statistics may describe a partial set or exclude failed cases; always inspect status and n_finite.',
@@ -289,13 +312,19 @@ def export(snapshot, paper, output):
                'FM-FM uses the uncommented manuscript 1000-case main tables; other methods target 100 cases.',
                'Each cell has 500 noiseless observations. DDIS/FunDPS cover Poisson and Helmholtz only.',
                'Manuscript NS inverse ID/Smooth and Burgers Random ID/Smooth weights used first 100 test inputs for tuning.',
-               'Only metadata and saved verification summaries are checked; prediction arrays are not revalidated by this command.'])
+               'Only metadata and saved verification summaries are checked; prediction arrays are not revalidated by this command.',
+               'Verified includes documented numerical failures; n_finite counts verified successful cases, not accuracy-qualified cases.',
+               'metrics_original.csv always preserves original-configuration statistics.',
+               'Repair parameters were selected after inspecting failures; result_version and selection_note identify the affected whole 100-case settings.'])
     report = ['# 最新采样统计', '', f'服务器快照时间：{snapshot["captured_at"]}', '',
+              f'结果版本：{summary["result_selection"]}；采用修正版的完整设置：{summary["repaired_settings"]}。原配置统计另存 `metrics_original.csv`。', '',
               '| 方法 | 已保存 | 已验证 / 计划 | 满 100 例的设置 | 数值失败 | 分片错误记录 |',
               '|---|---:|---:|---:|---:|---:|']
     for method, t in totals.items():
         report.append(f'| {method} | {t["n_saved"]} | {t["n_verified"]}/{t["expected_n"]} | {t["completed_cells"]}/{t["cells"]} | {t["n_failed"]} | {t["worker_failure_runs"]} |')
     report += ['', '数值失败也计入已验证数量，但不计入成功样本均值；分片错误记录可能正在重试。', '',
+        'verified 表示记录已核验，不代表采样成功或精度达标。成功记录由独立核验脚本读取预测数组、检查样本/观测位置并重算误差；失败记录核对状态及缺失指标。汇总命令只交叉核对这些核验证据。', '',
+        '修正版按完整 100 例设置替换，CSV 的 result_version、sampling_parameters_json、selection_note 标注参数及选参方式；original_n_failed 保留同设置的原始失败数。修正版属于失败触发的测试集参数调整，不应当作独立验证集选参结果。', '',
         '所有误差列均为百分数。`mean_percent` 仅在完整 100 例均有有限误差时填写；`finite_mean_percent` 等统计列仅使用已验证且成功的样本，可能来自未完成设置。必须结合 `status` 和 `n_finite` 阅读。', '',
         'FM-FM 为论文正文的 1000 例结果，其他方法计划每格 100 例。DDIS/FunDPS 的 Darcy、NS、Burgers 没有已训练模型，本表不将其计入待采样任务。', '',
         '论文 NS inverse ID/Smooth、Burgers Random ID/Smooth 曾用相应测试集前 100 例调观测权重。各方法计算预算也不同，因此本表不是严格配对、预算匹配的算法比较。', '']
@@ -312,9 +341,10 @@ def export(snapshot, paper, output):
     files = {
         'latest_source_snapshot.json.gz': gzip.compress(json_bytes(snapshot)),
         'metrics.csv': csv_bytes(all_rows), 'metrics.json': json_bytes(all_rows),
+        'metrics_original.csv': csv_bytes(original_all_rows),
         'progress.csv': csv_bytes(rows, ['method', 'pde', 'task', 'split', 'status', 'expected_n',
             'n_saved', 'n_verified', 'n_finite', 'n_failed', 'n_unverified', 'n_pending',
-            'worker_failure_runs', 'resource_review_runs', 'captured_at']),
+            'worker_failure_runs', 'resource_review_runs', 'result_version', 'original_n_failed', 'captured_at']),
         'latest_summary.json': json_bytes(summary), 'live_report.md': '\n'.join(report).encode()}
     for name, data in files.items():
         atomic_write(output / name, data)
@@ -329,13 +359,14 @@ def main():
     parser.add_argument('--ssh-control-path', help='Optional SSH multiplex socket')
     parser.add_argument('--paper', type=Path, default=Path.home() / 'C04Papers/fm4pde_jmlr/fm4pde_jmlr_revision.tex')
     parser.add_argument('--output', type=Path, default=REPO / 'reports/five_method_comparison_20260921')
+    parser.add_argument('--original-only', action='store_true', help='Report original evaluation configurations without selecting audited repairs')
     source = parser.add_mutually_exclusive_group()
     source.add_argument('--snapshot', type=Path, help='Recompute offline from a saved JSON or JSON.gz snapshot')
     source.add_argument('--local-root', type=Path, help='Read a locally mounted result root without SSH')
     source.add_argument('--collect', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.collect:
-        sys.stdout.write(json.dumps(collect(args.root), allow_nan=False))
+        sys.stdout.write(json.dumps(collect(args.root, not args.original_only), allow_nan=False))
         return
     if not args.paper.is_file():
         parser.error(f'Manuscript missing: {args.paper}; use --paper PATH')
@@ -344,7 +375,7 @@ def main():
         with opener(args.snapshot, 'rt') as handle:
             snapshot = json.load(handle)
     elif args.local_root:
-        snapshot = collect(args.local_root)
+        snapshot = collect(args.local_root, not args.original_only)
     else:
         command = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
                    '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3']
@@ -356,22 +387,31 @@ def main():
                     break
         if socket:
             command += ['-S', socket]
-        command += [args.host, shlex.join(['python3', args.remote_script, '--collect', '--root', args.root])]
+        remote_args = ['python3', args.remote_script, '--collect', '--root', args.root]
+        if args.original_only:
+            remote_args.append('--original-only')
+        command += [args.host, shlex.join(remote_args)]
         print(f'Reading latest metadata from {args.host} ...', flush=True)
         process = subprocess.run(command, capture_output=True, text=True, timeout=180)
         if process.returncode:
             raise RuntimeError(f'SSH collection failed; existing CSV unchanged.\n{process.stderr.strip()}')
         snapshot = json.loads(process.stdout)
-    summary = export(snapshot, args.paper.expanduser().resolve(), args.output.expanduser().resolve())
+    summary = export(snapshot, args.paper.expanduser().resolve(), args.output.expanduser().resolve(), args.original_only)
     print('Snapshot:', summary['captured_at'])
+    print(f'Result selection: {summary["result_selection"]}; repaired settings={summary["repaired_settings"]}')
+    print('verified = audited records (including documented failures); successful = finite predictions, not an accuracy threshold.')
     for method, counts in summary['methods'].items():
         print(f'{method:8s} saved={counts["n_saved"]:4d}  verified={counts["n_verified"]:4d}/{counts["expected_n"]}'
               f'  complete settings={counts["completed_cells"]}/{counts["cells"]}'
-              f'  numeric failures={counts["n_failed"]}  shard errors={counts["worker_failure_runs"]}')
+              f'  successful={counts["n_finite"]}'
+              f'  numeric failures={counts["n_failed"]}  shard errors={counts["worker_failure_runs"]}'
+              + (f'  [original failures={counts["original_n_failed"]}; repaired settings={counts["repaired_settings"]}]'
+                 if counts['repaired_settings'] else ''))
     print(f'Wrote {summary["metric_rows"]} rows: {args.output.resolve() / "metrics.csv"}')
     print('Progress:', args.output.resolve() / 'progress.csv')
+    print('Original configurations:', args.output.resolve() / 'metrics_original.csv')
     if summary['warnings']:
-        print(f'{len(summary["warnings"])} changing files were skipped; see latest_summary.json')
+        print(f'{len(summary["warnings"])} collection/version warnings; see latest_summary.json')
 
 
 if __name__ == '__main__':

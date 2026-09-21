@@ -6,6 +6,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'adapters'))
 from summarize_current_results import aggregate
+from verified_repair_results import apply_repairs
 
 
 def snapshot(ids=range(100), failed=(), verified=True, worker_failure=False):
@@ -15,7 +16,7 @@ def snapshot(ids=range(100), failed=(), verified=True, worker_failure=False):
         relative_l2_coefficient=None if i in failed else (1e20 if i == 0 else .5),
         relative_l2_solution=None if i in failed else .25) for i in ids]
     ok = [c for c in cases if c['status'] == 'ok']
-    meta = {}
+    meta = dict(method='ECI-OFM', pde='poisson', task='inverse', split='id')
     if verified:
         meta['verified'] = dict(sample_ids=list(ids), cases=len(cases), successes=len(ok),
             failures=len(cases)-len(ok), successful_case_mean_relative_l2_coefficient=
@@ -28,6 +29,18 @@ def snapshot(ids=range(100), failed=(), verified=True, worker_failure=False):
 def target(value):
     return next(r for r in aggregate(value) if (r['method'], r['pde'], r['task'], r['split']) ==
                 ('ECI-OFM', 'poisson', 'inverse', 'id'))
+
+
+def add_repair(value):
+    repaired = snapshot()
+    meta = next(iter(repaired['runs'].values()))
+    meta.update(result_version='repair_test', sampling_parameters={'steps': 200})
+    meta['verified']['successful_case_mean_relative_l2_coefficient'] = .8
+    key = 'diagnostics/test_repair'
+    for row in repaired['cases']:
+        row.update(run_key=key, relative_l2_coefficient=.8)
+    value['repairs'] = [dict(run_key=key, meta=meta, cases=repaired['cases'])]
+    return value
 
 
 class CurrentResultsTest(unittest.TestCase):
@@ -79,6 +92,37 @@ class CurrentResultsTest(unittest.TestCase):
         rows = aggregate({'cases': [], 'runs': {}})
         self.assertEqual(len(rows), 132)
         self.assertTrue(all(r['status'] == 'not_started' and r['finite_mean_percent'] is None for r in rows))
+
+    def test_repair_replaces_whole_setting_and_preserves_original_failures(self):
+        value = add_repair(snapshot(failed=(99,)))
+        untouched = copy.deepcopy(value)
+        row = target(apply_repairs(value))
+        self.assertEqual((row['n_saved'], row['n_verified'], row['n_failed']), (100, 100, 0))
+        # Use all repaired values, including those worse than their originals.
+        self.assertAlmostEqual(row['mean_percent'], 80)
+        self.assertEqual(row['result_version'], 'repair_test')
+        self.assertEqual(target(value)['n_failed'], 1)
+        self.assertEqual(value, untouched)
+
+    def test_partial_duplicate_and_cross_setting_repairs_are_rejected(self):
+        value = add_repair(snapshot())
+        value['repairs'][0]['cases'].pop()
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            apply_repairs(value)
+        value = add_repair(snapshot())
+        value['repairs'].append(copy.deepcopy(value['repairs'][0]))
+        with self.assertRaisesRegex(ValueError, 'Duplicate'):
+            apply_repairs(value)
+        value = add_repair(snapshot())
+        value['repairs'][0]['cases'][0]['split'] = 'rough'
+        with self.assertRaisesRegex(ValueError, 'wrong setting'):
+            apply_repairs(value)
+
+    def test_repair_still_requires_consistent_verification(self):
+        value = add_repair(snapshot())
+        value['repairs'][0]['cases'][0]['relative_l2_coefficient'] = 100
+        with self.assertRaisesRegex(ValueError, 'mean disagrees'):
+            aggregate(apply_repairs(value))
 
 
 if __name__ == '__main__':
