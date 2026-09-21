@@ -2,21 +2,38 @@
 import fcntl
 import os
 from pathlib import Path
+import subprocess
+import time
 
 import torch
 
 
-def acquire_native_slot(root):
+def acquire_native_slot(root, exclusive=False):
     gpu = os.environ.get('CUDA_VISIBLE_DEVICES', '0')
     # Slot zero preserves the original mutex for already-running workers.
     # Additional slots are enabled only for explicitly launched, profiled jobs.
     slot = int(os.environ.get('DDIS_OFM_MEMORY_SLOT', '0'))
     if slot not in (0, 1):
         raise ValueError('At most two independently profiled OFM slots per GPU')
-    suffix = '' if slot == 0 else f'_slot_{slot}'
-    lock = (Path(root) / 'locks' / f'native_ofm_memory_gpu_{gpu}{suffix}.lock').open('w')
-    fcntl.flock(lock, fcntl.LOCK_EX)
-    return lock
+    if exclusive and slot != 0:
+        raise ValueError('High-memory tasks must use the primary OFM slot')
+    locks = []
+    for selected in ([0, 1] if exclusive else [slot]):
+        suffix = '' if selected == 0 else f'_slot_{selected}'
+        lock = (Path(root) / 'locks' / f'native_ofm_memory_gpu_{gpu}{suffix}.lock').open('w')
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        locks.append(lock)
+    if exclusive:
+        # Darcy forward's adaptive ODE graph can be much larger than its
+        # first successful sample. Reserve both OFM slots before admission.
+        while True:
+            free = int(subprocess.check_output(['nvidia-smi', '-i', gpu,
+                '--query-gpu=memory.free', '--format=csv,noheader,nounits']))
+            if free >= 76000:
+                break
+            print('OFM high-memory task waiting for 76000 MiB free', flush=True)
+            time.sleep(30)
+    return locks
 
 
 def install_guard(prior):

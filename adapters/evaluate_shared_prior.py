@@ -119,7 +119,8 @@ def main(args):
     native_slot = None
     if args.method == 'ofm':
         from ofm_resource_guard import acquire_native_slot
-        native_slot = acquire_native_slot(args.assets.parent.parent)
+        native_slot = acquire_native_slot(args.assets.parent.parent,
+            exclusive=args.pde == 'darcy' and task == 'forward')
     torch.manual_seed(args.seed)
     if args.device.startswith('cuda'):
         torch.cuda.reset_peak_memory_stats()
