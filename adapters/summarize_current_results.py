@@ -16,7 +16,6 @@ import json
 import math
 import os
 from pathlib import Path
-import re
 import shlex
 import statistics
 import subprocess
@@ -25,6 +24,7 @@ import tempfile
 import time
 
 from verified_repair_results import apply_repairs, collect_repairs
+from manuscript_metrics import parse_paper
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_ROOT = '/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919'
@@ -102,56 +102,6 @@ def collect(root, include_repairs=True):
     result['repairs'] = collect_repairs(root, result) if include_repairs else []
     result['captured_at'] = datetime.now(timezone.utc).isoformat()
     return result
-
-
-def parse_paper(path):
-    raw = path.read_text()
-    lines = [re.split(r'(?<!\\)%', line)[0] for line in raw.splitlines()]
-    clean = '\n'.join(lines)
-
-    def table(label):
-        loc = clean.index('\\label{' + label + '}')
-        return clean[clean.rfind('\\begin{table}', 0, loc):clean.index('\\end{table}', loc)]
-
-    def numbers(cell):
-        values = [float(v) for v in re.findall(r'\d+\.\d+', cell)]
-        if len(values) != 2:
-            raise ValueError(f'Cannot parse manuscript mean/std: {cell}')
-        return values
-
-    def row(pde, task, split, cell, line):
-        mean, sd = numbers(cell)
-        return dict(method='FM-FM', pde=pde, task=task, split=split, n=1000,
-            expected_n=1000, n_finite=None, n_failed=None, mean_percent=mean,
-            finite_mean_percent=mean, finite_std_percent=sd, status='paper_reference',
-            source='manuscript_main_table', source_line=lines.index(line) + 1)
-
-    rows = []
-    for task in ('forward', 'inverse'):
-        pde = None
-        block = table('tab:sparse-' + task + '-results')
-        if '1,000' not in block and '1000' not in block:
-            raise ValueError('Manuscript table sample size changed; review the parser')
-        for line in block.splitlines():
-            if not re.search(r'&\s*(ID|Smooth|Rough)\s*&', line):
-                continue
-            for token, name in [('Poisson', 'poisson'), ('Helmholtz', 'helmholtz'),
-                                ('Darcy', 'darcy'), ('Navier--Stokes', 'nsnonbounded')]:
-                if token in line:
-                    pde = name
-            fields = line.split('&')
-            if not pde:
-                raise ValueError('Cannot identify PDE in manuscript table')
-            rows.append(row(pde, task, fields[1].strip().lower(), fields[5], line))
-    block = table('tab:burgers-results')
-    random = block[block.index('{Random}'):block.index('{Structured}')]
-    line = next(line for line in random.splitlines() if 'FM4PDE (100 steps)' in line)
-    for split, cell in zip(SPLITS, line.split('&')[2:5]):
-        rows.append(row('burger', 'both', split, cell, line))
-    expected = {(p, t, s) for p in PDES for t in (('both',) if p == 'burger' else ('forward', 'inverse')) for s in SPLITS}
-    if len(rows) != 27 or {(r['pde'], r['task'], r['split']) for r in rows} != expected:
-        raise ValueError('Manuscript does not contain exactly the expected 27 settings')
-    return rows
 
 
 def quantile(values, q):
@@ -283,6 +233,7 @@ def export(snapshot, paper, output, original_only=False):
         r['original_n_failed'] = original['n_failed']
         r['original_finite_over_1000_percent'] = original['finite_over_1000_percent']
     paper_rows = parse_paper(paper)
+    paper_counts = sorted({r['n'] for r in paper_rows})
     totals = {}
     for method in PREFIXES:
         selected = [r for r in rows if r['method'] == method]
@@ -303,13 +254,14 @@ def export(snapshot, paper, output, original_only=False):
     summary = dict(captured_at=snapshot['captured_at'], generated_at=datetime.now(timezone.utc).isoformat(),
         source_root=snapshot['root'], paper=str(paper), paper_sha256=sha(paper),
         methods=totals, metric_rows=len(all_rows), warnings=warnings,
+        manuscript_sample_counts=paper_counts,
         result_selection='original_only' if original_only else 'audited_whole_setting_repairs',
         repaired_settings=sum(t['repaired_settings'] for t in totals.values()),
         notes=['All statistics use verified case records only; unfinished shards are counted under n_saved, not n_verified.',
                'mean_percent is blank unless all 100 cases are verified with finite target errors.',
                'finite_* statistics may describe a partial set or exclude failed cases; always inspect status and n_finite.',
                'Finite extreme errors are uncapped. Worker/resource failures do not count as numeric case failures.',
-               'FM-FM uses the uncommented manuscript 1000-case main tables; other methods target 100 cases.',
+               'FM-FM uses active manuscript main tables and caption-declared sample counts; other methods target 100 cases.',
                'Each cell has 500 noiseless observations. DDIS/FunDPS cover Poisson and Helmholtz only.',
                'Manuscript NS inverse ID/Smooth and Burgers Random ID/Smooth weights used first 100 test inputs for tuning.',
                'Only metadata and saved verification summaries are checked; prediction arrays are not revalidated by this command.',
@@ -326,7 +278,7 @@ def export(snapshot, paper, output, original_only=False):
         'verified 表示记录已核验，不代表采样成功或精度达标。成功记录由独立核验脚本读取预测数组、检查样本/观测位置并重算误差；失败记录核对状态及缺失指标。汇总命令只交叉核对这些核验证据。', '',
         '修正版按完整 100 例设置替换，CSV 的 result_version、sampling_parameters_json、selection_note 标注参数及选参方式；original_n_failed 保留同设置的原始失败数。修正版属于失败触发的测试集参数调整，不应当作独立验证集选参结果。', '',
         '所有误差列均为百分数。`mean_percent` 仅在完整 100 例均有有限误差时填写；`finite_mean_percent` 等统计列仅使用已验证且成功的样本，可能来自未完成设置。必须结合 `status` 和 `n_finite` 阅读。', '',
-        'FM-FM 为论文正文的 1000 例结果，其他方法计划每格 100 例。DDIS/FunDPS 的 Darcy、NS、Burgers 没有已训练模型，本表不将其计入待采样任务。', '',
+        f'FM-FM 来自当前正文主表，标题中的样本数为 {paper_counts}，每项 n/expected_n 按对应标题填写；其他方法计划每格 100 例。DDIS/FunDPS 的 Darcy、NS、Burgers 没有已训练模型，本表不将其计入待采样任务。', '',
         '论文 NS inverse ID/Smooth、Burgers Random ID/Smooth 曾用相应测试集前 100 例调观测权重。各方法计算预算也不同，因此本表不是严格配对、预算匹配的算法比较。', '']
     for method in ('OFM', 'FunDPS'):
         report += [f'## {method} 逐项进度', '', '| 方程 | 任务 | 分布 | 已保存 | 已验证 / 100 | 失败 | 状态 | 已验证成功样本均值（%） |', '|---|---|---|---:|---:|---:|---|---:|']

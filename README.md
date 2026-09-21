@@ -251,8 +251,12 @@ It reads the latest small JSON records on `server216` over SSH and writes
 rows), plus `progress.csv`, `metrics.json`, `live_report.md`,
 `latest_summary.json` and a reproducible `latest_source_snapshot.json.gz`.
 The CSV covers ECI-FM, ECI-OFM, DDIS, FM-FM, FM-OFM, native OFM and FunDPS.
-FM-FM is parsed from the **uncommented 1000-case main tables** in
-`~/C04Papers/fm4pde_jmlr/fm4pde_jmlr_revision.tex`; DDIS/FunDPS cover the two
+FM-FM is parsed from the **active, uncommented main tables** in
+`~/C04Papers/fm4pde_jmlr/fm4pde_jmlr_revision.tex`. Its `n` and `expected_n`
+come from each table caption's test sample count, not the sampler step counts
+in the headers. Logical LaTeX rows may span multiple source lines; columns
+are located by their headers. `source_table` and `source_line` identify each
+FM4PDE metric. DDIS/FunDPS cover the two
 trained PDEs, Poisson and Helmholtz. Each other included evaluation targets 100
 cases. No model loading, sampling, GPU work or modification of remote results
 occurs. The script uses only the Python standard library.
