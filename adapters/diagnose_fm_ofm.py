@@ -62,7 +62,11 @@ def main(args):
         original_guidance_overrides=original['guidance_overrides'],splits=splits,all_cases=args.all_cases,
         sample_ids={s:list(range(100)) if args.all_cases else CASES[args.pde][s] for s in splits},
         note='Failure-triggered parameter diagnostics; not independent held-out model selection. Algorithms and prior weights unchanged.')
-    atomic_json(args.output/'run.json',run)
+    run_path=args.output/'run.json'
+    if run_path.exists():
+        if not args.resume or json.loads(run_path.read_text())!=run:
+            raise ValueError('Resuming requires --resume and an identical configuration')
+    atomic_json(run_path,run)
     records=[]
     for variant in variants:
         for split in splits:
@@ -72,6 +76,12 @@ def main(args):
             indices=list(range(100)) if args.all_cases else CASES[args.pde][split]
             directory=args.output/variant/split;directory.mkdir(parents=True,exist_ok=True)
             for index in indices:
+                existing=directory/f'case_{index:03d}.json'
+                if args.resume and existing.exists():
+                    record=json.loads(existing.read_text())
+                    assert (record['sample_id'],record['variant'],record['split'])==(index,variant,split)
+                    records.append(record)
+                    continue
                 torch.manual_seed(index)
                 truth=case_ground_truth(saved,index,'cuda')
                 masks,_=common_masks(truth,index,0,task if args.pde!='burger' else 'inverse')
@@ -129,4 +139,5 @@ if __name__=='__main__':
     p.add_argument('--variants',choices=list(VARIANTS),nargs='+')
     p.add_argument('--splits',choices=['id','smooth','rough'],nargs='+')
     p.add_argument('--all-cases',action='store_true')
+    p.add_argument('--resume',action='store_true',help='Retain completed cases when moving an identical run to another GPU.')
     main(p.parse_args())
