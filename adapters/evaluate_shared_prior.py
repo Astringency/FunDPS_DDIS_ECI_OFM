@@ -113,6 +113,9 @@ def main(args):
     coefficient_indices, solution_indices = pair_observation_indices(args.seed)
     np.save(args.output / 'coefficient_observation_indices.npy', coefficient_indices)
     np.save(args.output / 'solution_observation_indices.npy', solution_indices)
+    from resource_profile_cache import reuse_profile
+    if reuse_profile(args.output, config_record):
+        return
     torch.manual_seed(args.seed)
     if args.device.startswith('cuda'):
         torch.cuda.reset_peak_memory_stats()
