@@ -51,8 +51,12 @@ def run_eci_batches(args, indices, saved, assets, task, net, normalizer, payload
 
     pending = [i for i in indices if not (args.output / f'case_{i:03d}.json').exists()]
     channels = 1 if args.pde == 'burger' else 2
+    chunks = []
     for offset in range(0, len(pending), args.eci_batch_size):
-        batch_ids = pending[offset:offset + args.eci_batch_size]
+        ids = pending[offset:offset + args.eci_batch_size]
+        # Use only the validated full batch shape; residual cases retain B=1.
+        chunks.extend([ids] if len(ids) == args.eci_batch_size else [[i] for i in ids])
+    for batch_ids in chunks:
         truths, masks, extras, draws, noise_hashes = [], [], [], [], []
         start = time.monotonic()
         torch.cuda.reset_peak_memory_stats()

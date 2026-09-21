@@ -35,6 +35,9 @@ def main(args):
     from native_diagnostics import trace_native
     if args.eci_batch_size == 0:
         policy = Path(__file__).resolve().parents[1] / 'configs/eci_batching.json'
+        runtime_policy = args.assets.parent.parent / 'jobs/eci_batch_policy.json'
+        if runtime_policy.exists():
+            policy = runtime_policy
         settings = json.loads(policy.read_text()) if policy.exists() else {}
         args.eci_batch_size = settings.get(args.prior, {}).get(args.pde, 1) if args.method == 'eci' else 1
     existing_run = args.output / 'run.json'
