@@ -20,6 +20,8 @@ def main():
     while True:
         try:
             subprocess.run(['rsync', '-a', '-e', 'ssh -o BatchMode=yes',
+                f'server197:{REMOTE}/assignment.json', str(a.cache / 'assignment.json')], check=True)
+            subprocess.run(['rsync', '-a', '-e', 'ssh -o BatchMode=yes',
                 f'server197:{REMOTE}/evaluation_v2/', str(a.cache / 'evaluation_v2') + '/'], check=True)
             for marker in sorted((a.cache / 'evaluation_v2').rglob('verified_summary.json')):
                 folder = marker.parent
@@ -51,6 +53,10 @@ if not (dest/'verified_summary.json').exists():
                 subprocess.run(SSH216 + ['python3 -c ' + shlex.quote(code)], check=True)
                 (folder / '.published_to_216').write_text(str(time.time()))
                 print('Published', relative, flush=True)
+            assigned = json.loads((a.cache / 'assignment.json').read_text())['shards']
+            if all((a.cache / item['relative'] / '.published_to_216').exists() for item in assigned):
+                print('All assigned shards returned; synchronization complete.', flush=True)
+                break
         except subprocess.CalledProcessError as error:
             print('Transfer will retry:', error, flush=True)
         if a.once:

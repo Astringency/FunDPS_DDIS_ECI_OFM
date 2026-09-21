@@ -63,8 +63,15 @@ def main():
     parser.add_argument('--worker', type=int)
     parser.add_argument('--workers', type=int, default=16)
     parser.add_argument('--audit', action='store_true')
+    parser.add_argument('--wait', action='store_true', help='Wait for the uniform rerun before auditing.')
     args = parser.parse_args()
     if args.audit:
+        if args.wait:
+            while len(list((ROOT / 'full').glob('case_*/completed.json'))) != 100:
+                exits = list(ROOT.glob('worker_*.exit'))
+                if any(path.read_text().strip() != '0' for path in exits):
+                    raise RuntimeError('A repair worker failed; refusing to publish a partial repair')
+                time.sleep(30)
         audit()
         return
     os.environ.update(CUDA_VISIBLE_DEVICES=str(args.gpu), OMP_NUM_THREADS='2',
