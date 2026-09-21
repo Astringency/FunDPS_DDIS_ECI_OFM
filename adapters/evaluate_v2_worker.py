@@ -18,6 +18,7 @@ p.add_argument('--slot', type=int, default=0, help='Additional concurrent proces
 p.add_argument('--eci-ofm-only', action='store_true', help='Run ECI with completed OFM priors alongside the ECI-FM queue.')
 p.add_argument('--fm-ofm-only', action='store_true', help='Run FM4PDE with completed, calibrated OFM priors.')
 p.add_argument('--ofm-only', action='store_true', help='Run official OFM sampling as soon as its prior completes.')
+p.add_argument('--exclude-darcy-forward', action='store_true', help='Reserve sample-dependent high-memory Darcy forward tasks for existing single-slot workers.')
 a = p.parse_args()
 ROOT.mkdir(exist_ok=True)
 matrix = json.loads((BASE / 'orchestration/configs/evaluation_matrix_v2.json').read_text())
@@ -38,6 +39,8 @@ while True:
         matrix = [r for r in matrix if (r['prior'], r['method']) == ('ofm', 'fm4pde')]
     if a.ofm_only:
         matrix = [r for r in matrix if (r['prior'], r['method']) == ('ofm', 'ofm')]
+    if a.exclude_darcy_forward:
+        matrix = [r for r in matrix if not (r['pde'] == 'darcy' and r['task'] == 'forward')]
     busy = False
     for q in ('poisson', 'helmholtz', 'darcy', 'nsnonbounded', 'burger'):
         state = OUT / 'jobs' / f'flow_{q}'
