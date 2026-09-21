@@ -33,6 +33,11 @@ def atomic_json(path, value):
 
 def main(args):
     from native_diagnostics import trace_native
+    import fcntl
+    args.output.mkdir(parents=True, exist_ok=True)
+    # Recovery and regular queues may meet at a shard. Only one evaluates it.
+    output_lock = (args.output / 'evaluation.lock').open('w')
+    fcntl.flock(output_lock, fcntl.LOCK_EX)
     if args.eci_batch_size == 0:
         policy = Path(__file__).resolve().parents[1] / 'configs/eci_batching.json'
         runtime_policy = args.assets.parent.parent / 'jobs/eci_batch_policy.json'
@@ -110,6 +115,9 @@ def main(args):
         if previous != config_record:
             raise ValueError('Output directory already belongs to a different configuration')
     atomic_json(run_path, config_record)
+    if (args.output / 'verified_summary.json').exists():
+        print('Matching configuration already independently verified:', args.output, flush=True)
+        return
     coefficient_indices, solution_indices = pair_observation_indices(args.seed)
     np.save(args.output / 'coefficient_observation_indices.npy', coefficient_indices)
     np.save(args.output / 'solution_observation_indices.npy', solution_indices)

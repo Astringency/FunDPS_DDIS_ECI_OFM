@@ -13,7 +13,14 @@ def acquire_native_slot(root, exclusive=False):
     # Slot zero preserves the original mutex for already-running workers.
     # Additional slots are enabled only for explicitly launched, profiled jobs.
     slot = int(os.environ.get('DDIS_OFM_MEMORY_SLOT', '0'))
-    if slot not in (0, 1):
+    recovery_slot = slot == 2 and os.environ.get('DDIS_OFM_RECOVERY_SLOT_ALLOWED') == '1'
+    if recovery_slot:
+        if os.environ.get('DDIS_OFM_ACTIVATION_CHECKPOINT') != '1':
+            raise ValueError('The recovery slot requires validated activation recomputation')
+        if not 0 < float(os.environ.get('DDIS_OFM_MAX_ALLOCATED_GIB', '0')) <= 12:
+            raise ValueError('The recovery slot requires a maximum 12 GiB allocation budget')
+        exclusive = False
+    if slot not in (0, 1) and not recovery_slot:
         raise ValueError('At most two independently profiled OFM slots per GPU')
     if exclusive and slot != 0:
         raise ValueError('High-memory tasks must use the primary OFM slot')

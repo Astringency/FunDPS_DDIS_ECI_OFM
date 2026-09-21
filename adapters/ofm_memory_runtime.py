@@ -1,5 +1,6 @@
 """Optional PyTorch activation recomputation; official FNO and sampler stay intact."""
 import json
+import os
 from pathlib import Path
 
 import torch
@@ -17,7 +18,8 @@ def checkpoint_forward(model):
 
 def configure(prior, args):
     policy = args.assets.parent.parent / 'jobs/ofm_memory_policy.json'
-    enabled = policy.exists() and json.loads(policy.read_text()).get('activation_checkpoint', False)
+    enabled = os.environ.get('DDIS_OFM_ACTIVATION_CHECKPOINT') == '1' or (
+        policy.exists() and json.loads(policy.read_text()).get('activation_checkpoint', False))
     if enabled:
         checkpoint_forward(prior.model)
     record = dict(activation_checkpoint=bool(enabled),
