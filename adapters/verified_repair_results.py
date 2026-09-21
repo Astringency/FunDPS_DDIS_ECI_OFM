@@ -106,12 +106,13 @@ def collect_fundps_repair(root, snapshot):
     key = ('FunDPS', 'poisson', 'forward', 'rough')
     assert tuple(audit[f] for f in ('method', 'pde', 'task', 'split')) == key
     assert audit['parameters'] == dict(iterations=500, guidance_weights=[10000, 0, 0])
-    assert audit['validation']['verified_predictions'] == 100 and audit['validation']['failed'] == 0
+    assert audit['repair_scope'] == 'selected_samples' and audit['sample_ids'] == [6]
+    assert audit['validation']['verified_predictions'] == 1 and audit['validation']['failed'] == 0
     original = [m for m in snapshot['runs'].values()
         if tuple(m[f] for f in ('method', 'pde', 'task', 'split')) == key]
     assert original and all(m['run']['checkpoint_sha256'] == audit['checkpoint_sha256'] for m in original)
     records = []
-    run_key = 'diagnostics/fundps_repair_20260921/full'
+    run_key = 'diagnostics/fundps_repair_20260921/pilot_weight10000/case_006'
     for item in audit['records']:
         folder = root / item['directory']
         record, run, verified = item['case'], item['run'], item['verified']
@@ -132,17 +133,18 @@ def collect_fundps_repair(root, snapshot):
         assert hashlib.sha256(Path(record['prediction']).read_bytes()).hexdigest() == item['prediction_sha256']
         records.append(dict(record, method=key[0], pde=key[1], task=key[2], split=key[3],
             run_key=run_key, case_source=str(source.relative_to(root))))
-    assert sorted(r['sample_id'] for r in records) == list(range(100))
+    assert [r['sample_id'] for r in records] == [6]
     means = [statistics.fmean(r['relative_l2_' + f] for r in records) for f in ('coefficient', 'solution')]
     assert math.isclose(means[1] * 100, audit['validation']['mean_percent'], rel_tol=1e-10)
-    verified = dict(verified_cases=100, successful_cases=100, failed_cases=[],
-        sample_ids=list(range(100)), mean_relative_l2_successful_cases=means,
+    verified = dict(verified_cases=1, successful_cases=1, failed_cases=[],
+        sample_ids=[6], mean_relative_l2_successful_cases=means,
         verification_source=relative, verification_audit_sha256=hashlib.sha256(raw).hexdigest())
     meta = dict(method=key[0], pde=key[1], task=key[2], split=key[3],
         run=dict(checkpoint_sha256=audit['checkpoint_sha256']), verified=verified,
-        result_version='repair_weight10000_20260921', sampling_parameters=audit['parameters'],
-        selection_note='Failure-triggered test-set parameter tuning; whole 100-case setting replaced, not independently held-out selection.')
-    return [dict(run_key=run_key, meta=meta, cases=records)]
+        result_version='repair_sample006_weight10000_20260921',
+        sampling_parameters=dict(audit['parameters'], sample_ids=[6], other_99_cases_guidance_weights=[20000, 0, 0]),
+        selection_note='User-requested failed-sample repair only: ID 6 uses weight 10000; the other 99 original cases retain weight 20000. This setting mixes configurations selected after observing a failure.')
+    return [dict(run_key=run_key, meta=meta, cases=records, repair_scope='selected_samples')]
 
 
 def apply_repairs(snapshot):
@@ -153,6 +155,23 @@ def apply_repairs(snapshot):
         meta = repair['meta']
         fields = ('method', 'pde', 'task', 'split')
         key = tuple(meta[k] for k in fields)
+        if repair.get('repair_scope') == 'selected_samples':
+            # The sole authorized exception to complete-setting replacement.
+            if key in replaced or key != ('FunDPS', 'poisson', 'forward', 'rough') or [r['sample_id'] for r in repair['cases']] != [6]:
+                raise ValueError(f'Unexpected selected-sample repair: {key}')
+            if any(tuple(r[k] for k in fields) != key or r['run_key'] != repair['run_key'] for r in repair['cases']):
+                raise ValueError(f'Repair case belongs to the wrong setting: {key}')
+            previous = [r for r in selected['cases'] if tuple(r[k] for k in fields) == key and r['sample_id'] == 6]
+            if len(previous) != 1 or previous[0]['status'] != 'failed':
+                raise ValueError('Selected-sample repair must replace exactly the documented failed sample')
+            old_key = previous[0]['run_key']
+            if sum(r['run_key'] == old_key for r in selected['cases']) != 1:
+                raise ValueError('Selected-sample repair requires an independently verified single-case run')
+            selected['cases'] = [r for r in selected['cases'] if r['run_key'] != old_key] + repair['cases']
+            selected['runs'].pop(old_key)
+            selected['runs'][repair['run_key']] = meta
+            replaced.add(key)
+            continue
         if key in replaced or sorted(r['sample_id'] for r in repair['cases']) != list(range(100)):
             raise ValueError(f'Duplicate or incomplete whole-setting repair: {key}')
         if any(tuple(r[k] for k in fields) != key or r['run_key'] != repair['run_key'] for r in repair['cases']):

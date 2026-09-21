@@ -44,6 +44,29 @@ def add_repair(value):
 
 
 class CurrentResultsTest(unittest.TestCase):
+    def test_requested_failed_sample_repair_keeps_other_99_cases(self):
+        value = {'runs': {}, 'cases': []}
+        fields = dict(method='FunDPS', pde='poisson', task='forward', split='rough')
+        for i in range(100):
+            key = f'original/case_{i:03d}'
+            value['runs'][key] = dict(fields)
+            value['cases'].append(dict(fields, run_key=key, sample_id=i,
+                status='failed' if i == 6 else 'ok', relative_l2_solution=None if i == 6 else i / 100))
+        repaired = dict(fields, run_key='repair/case_006', sample_id=6, status='ok', relative_l2_solution=.18)
+        value['repairs'] = [dict(run_key=repaired['run_key'], meta=dict(fields),
+            cases=[repaired], repair_scope='selected_samples')]
+        before = copy.deepcopy(value)
+        selected = apply_repairs(value)
+        self.assertEqual(len(selected['cases']), 100)
+        self.assertEqual(len(selected['runs']), 100)
+        self.assertEqual([r for r in selected['cases'] if r['sample_id'] != 6],
+                         [r for r in before['cases'] if r['sample_id'] != 6])
+        self.assertEqual(value, before)
+        self.assertEqual(next(r for r in selected['cases'] if r['sample_id'] == 6), repaired)
+        value['cases'][6]['status'] = 'ok'
+        with self.assertRaisesRegex(ValueError, 'documented failed sample'):
+            apply_repairs(value)
+
     def test_complete_large_finite_values_are_not_capped(self):
         row = target(snapshot())
         self.assertEqual(row['status'], 'complete')

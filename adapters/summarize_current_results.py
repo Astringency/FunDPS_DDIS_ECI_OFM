@@ -3,7 +3,7 @@
 
 Uses only the Python standard library. Reads small JSON records; never runs
 sampling, imports a model, or modifies any server-side evaluation result.
-Defaults to audited whole-setting repairs and also exports original results.
+Defaults to audited repairs with explicit scopes and also exports original results.
 """
 import argparse
 from collections import Counter, defaultdict
@@ -241,7 +241,7 @@ def export(snapshot, paper, output, original_only=False):
             ('expected_n', 'n_saved', 'n_verified', 'n_finite', 'n_failed', 'worker_failure_runs', 'resource_review_runs')}
         totals[method].update(cells=len(selected), completed_cells=sum(r['n_verified'] == 100 for r in selected),
             original_n_failed=sum(r['original_n_failed'] for r in selected),
-            repaired_settings=sum(r['result_version'].startswith('repair_') for r in selected))
+            repaired_settings=sum(any(v.startswith('repair_') for v in r['result_version'].split(';')) for r in selected))
     for r in rows + original_rows + paper_rows:
         r['captured_at'] = snapshot['captured_at']
         r['metric_units'] = 'percent'
@@ -255,7 +255,7 @@ def export(snapshot, paper, output, original_only=False):
         source_root=snapshot['root'], paper=str(paper), paper_sha256=sha(paper),
         methods=totals, metric_rows=len(all_rows), warnings=warnings,
         manuscript_sample_counts=paper_counts,
-        result_selection='original_only' if original_only else 'audited_whole_setting_repairs',
+        result_selection='original_only' if original_only else 'audited_repairs_with_explicit_scope',
         repaired_settings=sum(t['repaired_settings'] for t in totals.values()),
         notes=['All statistics use verified case records only; unfinished shards are counted under n_saved, not n_verified.',
                'mean_percent is blank unless all 100 cases are verified with finite target errors.',
@@ -267,16 +267,16 @@ def export(snapshot, paper, output, original_only=False):
                'Only metadata and saved verification summaries are checked; prediction arrays are not revalidated by this command.',
                'Verified includes documented numerical failures; n_finite counts verified successful cases, not accuracy-qualified cases.',
                'metrics_original.csv always preserves original-configuration statistics.',
-               'Repair parameters were selected after inspecting failures; result_version and selection_note identify the affected whole 100-case settings.'])
+               'Repair parameters were selected after inspecting failures; result_version and selection_note identify the scope. FunDPS replaces only failed sample 6 at user request; other repairs replace whole settings.'])
     report = ['# 最新采样统计', '', f'服务器快照时间：{snapshot["captured_at"]}', '',
-              f'结果版本：{summary["result_selection"]}；采用修正版的完整设置：{summary["repaired_settings"]}。原配置统计另存 `metrics_original.csv`。', '',
+              f'结果版本：{summary["result_selection"]}；含修复结果的设置：{summary["repaired_settings"]}。原配置统计另存 `metrics_original.csv`。', '',
               '| 方法 | 已保存 | 已验证 / 计划 | 满 100 例的设置 | 数值失败 | 分片错误记录 |',
               '|---|---:|---:|---:|---:|---:|']
     for method, t in totals.items():
         report.append(f'| {method} | {t["n_saved"]} | {t["n_verified"]}/{t["expected_n"]} | {t["completed_cells"]}/{t["cells"]} | {t["n_failed"]} | {t["worker_failure_runs"]} |')
     report += ['', '数值失败也计入已验证数量，但不计入成功样本均值；分片错误记录可能正在重试。', '',
         'verified 表示记录已核验，不代表采样成功或精度达标。成功记录由独立核验脚本读取预测数组、检查样本/观测位置并重算误差；失败记录核对状态及缺失指标。汇总命令只交叉核对这些核验证据。', '',
-        '修正版按完整 100 例设置替换，CSV 的 result_version、sampling_parameters_json、selection_note 标注参数及选参方式；original_n_failed 保留同设置的原始失败数。修正版属于失败触发的测试集参数调整，不应当作独立验证集选参结果。', '',
+        'ECI-OFM、FM-OFM 修正版按完整 100 例设置替换；FunDPS 按用户要求仅修复 Poisson forward/Rough 的样本 6，其引导权重为 10000，其他 99 例保留原权重 20000。CSV 的 result_version、sampling_parameters_json、selection_note 标注范围和参数；original_n_failed 保留原始失败数。这是失败触发的参数调整，不是独立验证集选参。', '',
         '所有误差列均为百分数。`mean_percent` 仅在完整 100 例均有有限误差时填写；`finite_mean_percent` 等统计列仅使用已验证且成功的样本，可能来自未完成设置。必须结合 `status` 和 `n_finite` 阅读。', '',
         f'FM-FM 来自当前正文主表，标题中的样本数为 {paper_counts}，每项 n/expected_n 按对应标题填写；其他方法计划每格 100 例。DDIS/FunDPS 的 Darcy、NS、Burgers 没有已训练模型，本表不将其计入待采样任务。', '',
         '论文 NS inverse ID/Smooth、Burgers Random ID/Smooth 曾用相应测试集前 100 例调观测权重。各方法计算预算也不同，因此本表不是严格配对、预算匹配的算法比较。', '']
@@ -333,7 +333,7 @@ def main():
                    '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3']
         socket = args.ssh_control_path
         if socket is None:
-            for candidate in ('/tmp/ddis216-recovered-20260919', '/tmp/ddis216-20260919-ssh'):
+            for candidate in ('/tmp/ddis216-reallocation-20260921', '/tmp/ddis216-recovered-20260919', '/tmp/ddis216-20260919-ssh'):
                 if Path(candidate).exists():
                     socket = candidate
                     break
