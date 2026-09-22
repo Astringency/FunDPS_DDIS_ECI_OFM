@@ -1,0 +1,12 @@
+[
+  {
+    "host": "server197",
+    "runtime": "/research_data/users/zhangxifeng/C01Python/DDIS_comparison_20260919/orchestration/configs/evaluation/fm_ofm_refine_runtime_server197_20260922.json",
+    "adapter": "/research_data/users/zhangxifeng/C01Python/DDIS_comparison_20260919/orchestration/adapters/refine_fm_ofm_strength.py"
+  },
+  {
+    "host": "server193",
+    "runtime": "/home/zhangxf/C01Python/DDIS_comparison_20260919/configs/evaluation/fm_ofm_refine_runtime_server193_20260922.json",
+    "adapter": "/home/zhangxf/C01Python/DDIS_comparison_20260919/adapters/refine_fm_ofm_strength.py"
+  }
+]

@@ -17,14 +17,26 @@ import subprocess
 import sys
 import time
 
-BASE = Path('/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919')
-ROOT = Path('/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919')
+RUNTIME = json.loads(Path(os.environ['FM_OFM_RUNTIME']).read_text()) if os.environ.get('FM_OFM_RUNTIME') else {}
+BASE = Path(RUNTIME.get('base', '/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919'))
+ROOT = Path(RUNTIME.get('root', '/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919'))
 STUDY = ROOT / 'diagnostics/fm_ofm_strength_refine_20260922'
 PREVIOUS = ROOT / 'diagnostics/fm_ofm_strength_confirm_20260922'
-AD = BASE / 'orchestration/adapters'
-PY = BASE / 'venv-shared-prior/bin/python'
+AD = Path(RUNTIME.get('adapters', str(BASE / 'orchestration/adapters')))
+PY = Path(RUNTIME.get('python', str(BASE / 'venv-shared-prior/bin/python')))
 PLAN = AD.parent / 'configs/evaluation/fm_ofm_strength_refine_20260922.json'
 SPLITS = ('id', 'smooth', 'rough')
+
+
+def assigned(group):
+    return not RUNTIME.get('groups') or group['pde'] + '/' + group['task'] in RUNTIME['groups']
+
+
+def relocate(value):
+    for old, new in sorted(RUNTIME.get('path_map', {}).items(), key=lambda item: -len(item[0])):
+        if value == old or value.startswith(old + '/'):
+            return new + value[len(old):]
+    return value
 
 
 def read(path):
@@ -116,7 +128,8 @@ def acquire_compute(gpu):
     while True:
         free, util = map(int, subprocess.check_output(['nvidia-smi', '-i', str(gpu),
             '--query-gpu=memory.free,utilization.gpu', '--format=csv,noheader,nounits'], text=True).split(','))
-        if free >= 32768 and os.getloadavg()[0] < 110 and util <= 90:
+        load_limit = RUNTIME.get('max_cpu_load', 110)
+        if free >= RUNTIME.get('min_free_mib', 32768) and (load_limit is None or os.getloadavg()[0] < load_limit) and util <= 90:
             if util <= 60:
                 return None
             for i in range(2):
@@ -137,6 +150,7 @@ def evaluate(group, phase, split, label, overrides, ids, gpu):
         slot = acquire_compute(gpu)
         try:
             old = read(ROOT / 'evaluation_v2/ofm/fm4pde' / group['pde'] / group['task'] / split / 'shard_000/run.json')
+            old = {k: relocate(v) if isinstance(v, str) else v for k, v in old.items()}
             if phase == 'test':
                 assets, source = Path(old['assets']), Path(old['source'])
             else:
@@ -155,7 +169,8 @@ def evaluate(group, phase, split, label, overrides, ids, gpu):
                 '--fm4pde', old['fm4pde'], '--ofm', old['ofm'], '--eci', old['eci'], '--output', str(dest),
                 '--fm-overrides', str(path)]
             atomic(dest / 'launch.json', dict(command=cmd, gpu=gpu, time=time.time()))
-            env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), OMP_NUM_THREADS='2', OPENBLAS_NUM_THREADS='2', MPLBACKEND='Agg')
+            threads = str(RUNTIME.get('cpu_threads', 2))
+            env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), OMP_NUM_THREADS=threads, OPENBLAS_NUM_THREADS=threads, MKL_NUM_THREADS=threads, MPLBACKEND='Agg')
             with (dest / 'sampling.log').open('a') as log:
                 code = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
             (dest / 'sampling.exit').write_text(str(code))
@@ -269,6 +284,8 @@ def worker(gpu, only=None):
     gpu_lock = (STUDY / f'gpu_{gpu}.lock').open('w')
     fcntl.flock(gpu_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     for group in plan['groups']:
+        if not assigned(group):
+            continue
         if only and group['pde'] + '/' + group['task'] != only:
             continue
         folder = STUDY / group['pde'] / group['task']
@@ -280,7 +297,7 @@ def worker(gpu, only=None):
             fcntl.flock(claim, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             claim.close();continue
-        atomic(folder / 'worker.json', dict(pid=os.getpid(), gpu=gpu, started_at=time.time()))
+        atomic(folder / 'worker.json', dict(pid=os.getpid(), gpu=gpu, host=RUNTIME.get('host', 'server216'), started_at=time.time()))
         try:
             work_group(group, gpu, plan)
         except Exception as error:
@@ -294,9 +311,11 @@ def merge_report(report):
     """Prefer complete round-two cells; expose every failed or extreme result."""
     if PLAN.exists() and (STUDY / 'plan.json').exists():
         plan = read(PLAN)
-        report['round1_rows'] = copy.deepcopy(report['rows'])
+        report.setdefault('round1_rows', copy.deepcopy(report['rows']))
         errors, active, count = [], 0, 0
         for group in plan['groups']:
+            if not assigned(group):
+                continue
             folder = STUDY / group['pde'] / group['task']
             if (folder / 'worker_error.json').exists():
                 errors.append(dict(pde=group['pde'], task=group['task'], **read(folder / 'worker_error.json')))
@@ -343,8 +362,13 @@ def merge_report(report):
                     confirmation_candidate_mean_percent=score(d['confirmation'][selected]) * 100,
                     comparison_note=selection.get('selection_note', d['selection_note']))
                 count += 1
-        report['refinement'] = dict(verified_settings=count, expected_settings=sum(len(g['test_splits']) for g in plan['groups']),
-            active_groups=active, errors=errors)
+        hosts = report.get('refinement', {}).get('hosts', {})
+        hosts[RUNTIME.get('host', 'server216')] = dict(verified_settings=count, active_groups=active, errors=errors,
+            assigned_groups=[g['pde'] + '/' + g['task'] for g in plan['groups'] if assigned(g)])
+        report['refinement'] = dict(verified_settings=sum(h['verified_settings'] for h in hosts.values()),
+            expected_settings=sum(len(g['test_splits']) for g in plan['groups']),
+            active_groups=sum(h['active_groups'] for h in hosts.values()),
+            errors=[e for h in hosts.values() for e in h['errors']], hosts=hosts)
     for row in report['rows']:
         row.setdefault('result_round', 1)
         row.setdefault('refinement_status', 'not_targeted')
@@ -359,16 +383,21 @@ def merge_report(report):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--worker-gpu', type=int, required=True)
+    p.add_argument('--worker-gpu', type=int)
+    p.add_argument('--merge-report', action='store_true')
     p.add_argument('--only')
     p.add_argument('--probe', action='store_true')
     a = p.parse_args()
-    if a.probe:
+    if a.merge_report:
+        print(json.dumps(merge_report(json.load(sys.stdin)), allow_nan=False))
+    elif a.worker_gpu is None:
+        p.error('--worker-gpu is required for sampling')
+    elif a.probe:
         STUDY.mkdir(parents=True, exist_ok=True)
         plan = read(PLAN)
-        group = plan['groups'][0]
+        group = next(g for g in plan['groups'] if assigned(g))
         assert prepare_assets(group['pde']), 'Reserved validation export not ready'
-        result = evaluate(group, 'preflight', 'rough', 'anchor', group['candidates']['anchor'], [0, 1], a.worker_gpu)
+        result = evaluate(group, 'preflight_' + RUNTIME.get('host', 'server216'), 'rough', 'anchor', group['candidates']['anchor'], [0, 1], a.worker_gpu)
         assert result['failures'] == 0 and result['over_1000'] == 0
         assert result['peak_reserved_bytes'] < 20 * 1024 ** 3
         atomic(STUDY / 'preflight.json', dict(result=result, gpu=a.worker_gpu, completed_at=time.time()))

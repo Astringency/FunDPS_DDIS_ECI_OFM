@@ -286,6 +286,16 @@ def main():
         command = ['python3', str(AD / Path(__file__).name), '--report']
         value = subprocess.check_output(ssh + ['server216', shlex.join(command)], text=True, timeout=180)
         result = json.loads(value)
+        hosts_path = Path(__file__).resolve().parents[1] / 'configs/evaluation/fm_ofm_refine_hosts_20260922.json'
+        if hosts_path.exists():
+            # Each host reports its assigned groups and checks its own live PIDs.
+            # The original 216 records remain a read-only baseline after migration.
+            result.pop('refinement', None)
+            for host in read(hosts_path):
+                command = ['env', 'FM_OFM_RUNTIME=' + host['runtime'], 'python3', host['adapter'], '--merge-report']
+                value = subprocess.check_output(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+                    host['host'], shlex.join(command)], input=json.dumps(result), text=True, timeout=180)
+                result = json.loads(value)
         if result.get('round1_rows'):
             previous = result['round1_rows']
             archive = dict(updated_at=result['updated_at'], rows=previous, result_selection='first_round_archive',
