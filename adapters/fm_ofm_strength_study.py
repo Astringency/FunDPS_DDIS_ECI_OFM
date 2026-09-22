@@ -183,6 +183,7 @@ def retry_safe_helmholtz(gpu):
     claim = (folder / 'claim.lock').open('w')
     fcntl.flock(claim, fcntl.LOCK_EX | fcntl.LOCK_NB)
     assert (folder / 'rejected_clip200_confirmation/decision.json').exists()
+    atomic(folder / 'worker.json', dict(pid=os.getpid(), gpu=gpu, started_at=time.time(), retry='safe_clip50'))
     atomic(folder / 'retry_plan.json', dict(group=group, confirmation_ids=list(range(80, 96)),
         reason='Clip 200 produced extreme finite errors on confirmation, rejected before using its test errors. Clip 50 was already independently audited in the earlier full-setting repair.'))
     try:
