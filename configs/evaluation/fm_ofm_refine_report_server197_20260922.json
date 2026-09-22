@@ -1,0 +1,24 @@
+{
+  "host": "server197",
+  "base": "/research_data/users/zhangxifeng/C01Python/DDIS_comparison_20260919",
+  "root": "/research_data/users/zhangxifeng/C01Python/FM4PDE/outputs/fm_ofm_guidance_refine_20260922",
+  "adapters": "/research_data/users/zhangxifeng/C01Python/DDIS_comparison_20260919/orchestration/adapters",
+  "python": "/research_data/users/zhangxifeng/C01Python/DDIS_comparison_20260919/venv-ofm-20260921/bin/python",
+  "groups": [
+    "nsnonbounded/forward",
+    "nsnonbounded/inverse",
+    "burger/both",
+    "darcy/inverse"
+  ],
+  "min_free_mib": 32768,
+  "max_cpu_load": null,
+  "cpu_threads": 1,
+  "nice": 19,
+  "path_map": {
+    "/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919": "/research_data/users/zhangxifeng/C01Python/DDIS_comparison_20260919",
+    "/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919": "/research_data/users/zhangxifeng/C01Python/FM4PDE/outputs/fm_ofm_guidance_refine_20260922"
+  },
+  "resource_note": "User-directed host migration. One low-priority, single-thread worker per otherwise idle GPU; CPU run-queue gate replaced by measured full-schedule GPU preflight. GPU memory and utilization gates remain.",
+  "report_only": true,
+  "report_note": "Aggregate the original 197 NS/Burgers workers and the independently launched Darcy inverse continuation. This file is for --merge-report; workers keep their separate runtime files."
+}
