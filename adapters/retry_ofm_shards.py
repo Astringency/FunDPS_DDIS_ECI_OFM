@@ -32,9 +32,11 @@ def main():
     p.add_argument('--root', type=Path, required=True)
     p.add_argument('--jobs', type=Path, required=True)
     p.add_argument('--gpu', type=int, required=True)
+    p.add_argument('--memory-slot', type=int, choices=(0, 2), default=2,
+        help='Bounded runtime slot; slot 0 can share a GPU with existing slot 2 recovery.')
     a = p.parse_args()
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(a.gpu), OMP_NUM_THREADS='2',
-        OPENBLAS_NUM_THREADS='2', MPLBACKEND='Agg', DDIS_OFM_MEMORY_SLOT='2',
+        OPENBLAS_NUM_THREADS='2', MPLBACKEND='Agg', DDIS_OFM_MEMORY_SLOT=str(a.memory_slot),
         DDIS_OFM_RECOVERY_SLOT_ALLOWED='1', DDIS_OFM_ACTIVATION_CHECKPOINT='1',
         DDIS_OFM_MAX_ALLOCATED_GIB='12')
     jobs = json.loads(a.jobs.read_text())['shards']
