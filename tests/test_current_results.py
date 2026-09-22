@@ -45,6 +45,36 @@ def add_repair(value):
 
 
 class CurrentResultsTest(unittest.TestCase):
+    def test_selected_eci_outlier_preserves_other_records_and_original_audit(self):
+        value = snapshot()
+        original_key, original_meta = next(iter(value['runs'].items()))
+        repaired = dict(value['cases'][0], run_key='diagnostics/eci_outlier', relative_l2_coefficient=2.)
+        meta = dict(original_meta, result_version='repair_selected_outlier', verified=dict(
+            cases=1, successes=1, failures=0, sample_ids=[0], successful_case_mean_relative_l2_coefficient=2.))
+        value['repairs'] = [dict(run_key=repaired['run_key'], meta=meta, cases=[repaired], repair_scope='selected_samples')]
+        before = copy.deepcopy(value)
+        selected = apply_repairs(value)
+        self.assertEqual(value, before)
+        self.assertEqual([r for r in selected['cases'] if r['sample_id'] != 0], value['cases'][1:])
+        self.assertEqual(selected['runs'][original_key]['original_verified'], original_meta['verified'])
+        self.assertEqual(selected['runs'][original_key]['verified']['sample_ids'], list(range(1, 100)))
+        row = target(selected)
+        self.assertEqual((row['n'], row['n_failed'], row['finite_over_1000_percent']), (100, 0, 0))
+        self.assertAlmostEqual(row['mean_percent'], 51.5)
+        self.assertEqual(target(value)['finite_over_1000_percent'], 1)
+        value['cases'][1]['relative_l2_coefficient'] = 20.
+        with self.assertRaisesRegex(ValueError, 'exactly the original finite outliers'):
+            apply_repairs(value)
+
+    def test_selected_eci_outlier_cannot_hide_unverified_original_cases(self):
+        value = snapshot(verified=False)
+        original_meta = next(iter(value['runs'].values()))
+        repaired = dict(value['cases'][0], run_key='diagnostics/eci_outlier', relative_l2_coefficient=2.)
+        value['repairs'] = [dict(run_key=repaired['run_key'], meta=original_meta,
+            cases=[repaired], repair_scope='selected_samples')]
+        with self.assertRaisesRegex(ValueError, 'verified original shard coverage'):
+            apply_repairs(value)
+
     def test_requested_failed_sample_repair_keeps_other_99_cases(self):
         value = {'runs': {}, 'cases': []}
         fields = dict(method='FunDPS', pde='poisson', task='forward', split='rough')

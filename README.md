@@ -299,6 +299,17 @@ The other 99 cases remain byte-for-byte original results. The affected CSV row
 explicitly identifies this mixed configuration. The proposed full-setting rerun
 was cancelled and its partial diagnostics are excluded from the report.
 
+On 2026-09-22 the user also requested targeted ECI-OFM Poisson inverse repairs
+for finite coefficient errors above 1000%: ID samples 6/8/13/15/66/80 and Smooth
+samples 12/13/17/55/80 (zero-based). These eleven samples use 800 steps with
+mixing reduced from 5 to 1, with the same weights, seeds and 500 observations.
+The other 189 predictions and case records are retained. Independent auditing
+recomputes saved prediction errors and checks observation locations; selection
+requires the full audited eleven-case set. The report explicitly identifies
+this test-outlier parameter tuning and mixed configuration. Original extreme
+errors remain uncapped in `metrics_original.csv` and their original counts
+remain in `original_finite_over_1000_percent`.
+
 OFM uses two admitted regular sampling processes per GPU on server216 (16
 total), plus one bounded recovery process on GPU 2. Server197 runs two primary
 Darcy-forward queues and two bounded recovery queues (four samplers total).

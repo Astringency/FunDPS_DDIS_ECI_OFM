@@ -1,4 +1,4 @@
-"""Read audited whole-setting repairs without altering original evaluations."""
+"""Read audited repairs with explicit whole-setting or selected-sample scope."""
 import hashlib
 import json
 import math
@@ -93,6 +93,56 @@ def collect_repairs(root, snapshot):
                 case_source=f"{key}/case_{r['sample_id']:03d}.json") for r in records]
             repairs.append(dict(run_key=key, meta=meta, cases=cases))
     repairs.extend(collect_fundps_repair(root, snapshot))
+    repairs.extend(collect_eci_outlier_repairs(root, snapshot))
+    return repairs
+
+
+def collect_eci_outlier_repairs(root, snapshot):
+    relative = 'diagnostics/eci_ofm_outliers_20260922/report/audit.json'
+    path = root / relative
+    if not path.exists():
+        return []
+    raw = path.read_bytes()
+    audit = json.loads(raw)
+    expected = {'id': [6, 8, 13, 15, 66, 80], 'smooth': [12, 13, 17, 55, 80]}
+    assert sorted(g['split'] for g in audit['groups']) == sorted(expected)
+    repairs = []
+    for group in audit['groups']:
+        split, run = group['split'], group['run']
+        ids = expected[split]
+        fields = dict(method='ECI-OFM', pde='poisson', task='inverse', split=split)
+        assert all(group[k] == v for k, v in fields.items())
+        assert group['sample_ids'] == ids and group['repair_scope'] == 'selected_samples'
+        assert run['ids'] == ids and run['variants'] == {'mix1_800x1': [800, 1, None, True]}
+        assert group['validation']['verified_predictions'] == len(ids) and group['validation']['failed'] == 0
+        full = root / 'diagnostics/eci_ofm_outliers_20260922' / split
+        assert json.loads((full / 'run.json').read_text()) == run
+        assert (full / 'completed.json').is_file()
+        originals = [m for m in snapshot['runs'].values() if all(m[k] == v for k, v in fields.items())]
+        assert originals and all(m['run']['checkpoint_sha256'] == run['checkpoint_sha256'] for m in originals)
+        for source, digest in group['untouched_case_sha256'].items():
+            assert hashlib.sha256((root / source).read_bytes()).hexdigest() == digest
+        key = str((full / 'mix1_800x1').relative_to(root))
+        records = []
+        for item in group['records']:
+            record = item['case']
+            assert json.loads((root / item['source']).read_text()) == record
+            assert json.loads((root / item['original_source']).read_text()) == item['original']
+            assert hashlib.sha256((root / item['prediction']).read_bytes()).hexdigest() == item['prediction_sha256']
+            assert record['status'] == 'ok' and 0 <= record['relative_l2_coefficient'] < 10
+            assert math.isfinite(record['relative_l2_solution']) and record['relative_l2_solution'] >= 0
+            records.append(dict(record, **fields, run_key=key, case_source=item['source']))
+        assert sorted(r['sample_id'] for r in records) == ids
+        verified = dict(cases=len(ids), successes=len(ids), failures=0, sample_ids=ids,
+            checkpoint_sha256=run['checkpoint_sha256'], verification_source=relative,
+            verification_audit_sha256=hashlib.sha256(raw).hexdigest())
+        for field in ('coefficient', 'solution'):
+            verified['successful_case_mean_relative_l2_' + field] = statistics.fmean(r['relative_l2_' + field] for r in records)
+        meta = dict(**fields, run=run, verified=verified, result_version='repair_selected_outliers_mix1_20260922',
+            sampling_parameters=dict(steps=800, mix=1, resample_step=None, sample_ids=ids,
+                remaining_original_cases=100-len(ids), original_steps=800, original_mix=5),
+            selection_note=f'User-requested test-outlier tuning: only IDs {ids} use mixing 1 instead of 5; all other cases retain original results. Same 800 steps, checkpoint, seeds and 500 observations. Not held-out parameter selection.')
+        repairs.append(dict(run_key=key, meta=meta, cases=records, repair_scope='selected_samples'))
     return repairs
 
 
@@ -156,19 +206,49 @@ def apply_repairs(snapshot):
         fields = ('method', 'pde', 'task', 'split')
         key = tuple(meta[k] for k in fields)
         if repair.get('repair_scope') == 'selected_samples':
-            # The sole authorized exception to complete-setting replacement.
-            if key in replaced or key != ('FunDPS', 'poisson', 'forward', 'rough') or [r['sample_id'] for r in repair['cases']] != [6]:
+            ids = [r['sample_id'] for r in repair['cases']]
+            is_fundps = key == ('FunDPS', 'poisson', 'forward', 'rough') and ids == [6]
+            is_eci = key[:3] == ('ECI-OFM', 'poisson', 'inverse') and key[3] in ('id', 'smooth')
+            if key in replaced or not (is_fundps or is_eci) or not ids or len(set(ids)) != len(ids):
                 raise ValueError(f'Unexpected selected-sample repair: {key}')
             if any(tuple(r[k] for k in fields) != key or r['run_key'] != repair['run_key'] for r in repair['cases']):
                 raise ValueError(f'Repair case belongs to the wrong setting: {key}')
-            previous = [r for r in selected['cases'] if tuple(r[k] for k in fields) == key and r['sample_id'] == 6]
-            if len(previous) != 1 or previous[0]['status'] != 'failed':
+            previous = [r for r in selected['cases'] if tuple(r[k] for k in fields) == key and r['sample_id'] in ids]
+            if len(previous) != len(ids):
+                raise ValueError('Selected-sample repair must replace each original ID exactly once')
+            if is_fundps and previous[0]['status'] != 'failed':
                 raise ValueError('Selected-sample repair must replace exactly the documented failed sample')
-            old_key = previous[0]['run_key']
-            if sum(r['run_key'] == old_key for r in selected['cases']) != 1:
-                raise ValueError('Selected-sample repair requires an independently verified single-case run')
-            selected['cases'] = [r for r in selected['cases'] if r['run_key'] != old_key] + repair['cases']
-            selected['runs'].pop(old_key)
+            if is_eci:
+                outliers = [r['sample_id'] for r in selected['cases'] if tuple(r[k] for k in fields) == key
+                    and r['status'] == 'ok' and r['relative_l2_coefficient'] > 10]
+                if sorted(outliers) != sorted(ids):
+                    raise ValueError('Selected ECI repair must cover exactly the original finite outliers above 1000 percent')
+            retained = [r for r in selected['cases'] if not (tuple(r[k] for k in fields) == key and r['sample_id'] in ids)]
+            for old_key in {r['run_key'] for r in previous}:
+                remainder = [r for r in retained if r['run_key'] == old_key]
+                if not remainder:
+                    selected['runs'].pop(old_key)
+                    continue
+                old_meta = selected['runs'][old_key]
+                v = old_meta.get('verified')
+                before = [r for r in selected['cases'] if r['run_key'] == old_key]
+                if not v or sorted(v['sample_ids']) != sorted(r['sample_id'] for r in before):
+                    raise ValueError('Selected-sample repair requires verified original shard coverage')
+                for field in ('coefficient', 'solution'):
+                    values = [r['relative_l2_' + field] for r in before if r['status'] == 'ok' and r.get('relative_l2_' + field) is not None]
+                    expected_mean = v.get('successful_case_mean_relative_l2_' + field)
+                    if values and expected_mean is not None and not math.isclose(statistics.fmean(values), expected_mean, rel_tol=1e-10, abs_tol=1e-12):
+                        raise ValueError('Original verification mean disagrees before selected-sample repair')
+                ok = [r for r in remainder if r['status'] == 'ok']
+                subset = dict(v, cases=len(remainder), successes=len(ok), failures=len(remainder)-len(ok),
+                    sample_ids=sorted(r['sample_id'] for r in remainder),
+                    verification_source=f'{old_key}/verified_summary.json (retained subset; original audit in original_verified)')
+                for field in ('coefficient', 'solution'):
+                    values = [r['relative_l2_' + field] for r in ok if r.get('relative_l2_' + field) is not None]
+                    subset['successful_case_mean_relative_l2_' + field] = statistics.fmean(values) if values else None
+                    subset['all_case_mean_relative_l2_' + field] = statistics.fmean(values) if len(values) == len(remainder) else None
+                selected['runs'][old_key] = dict(old_meta, original_verified=v, verified=subset)
+            selected['cases'] = retained + repair['cases']
             selected['runs'][repair['run_key']] = meta
             replaced.add(key)
             continue

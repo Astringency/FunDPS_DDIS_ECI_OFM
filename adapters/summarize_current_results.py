@@ -287,7 +287,7 @@ def export(snapshot, paper, output, original_only=False):
                'Only metadata and saved verification summaries are checked; prediction arrays are not revalidated by this command.',
                'Verified includes documented numerical failures; n_finite counts verified successful cases, not accuracy-qualified cases.',
                'metrics_original.csv always preserves original-configuration statistics.',
-               'Repair parameters were selected after inspecting failures; result_version and selection_note identify the scope. FunDPS replaces only failed sample 6 at user request; other repairs replace whole settings.'])
+               'Repair parameters were selected after inspecting failures/outliers; result_version and selection_note identify the scope. FunDPS replaces only failed sample 6. ECI-OFM Poisson inverse ID/Smooth replaces only the 6/5 original finite outliers above 1000 percent. Other repairs replace whole settings.'])
     report = ['# 最新采样统计', '', f'服务器快照时间：{snapshot["captured_at"]}', '',
               f'结果版本：{summary["result_selection"]}；含修复结果的设置：{summary["repaired_settings"]}。原配置统计另存 `metrics_original.csv`。', '',
               '| 方法 | 已保存 | 已验证 / 计划 | 满 100 例的设置 | 数值失败 | 分片错误记录 |',
@@ -297,7 +297,7 @@ def export(snapshot, paper, output, original_only=False):
     report += ['', '数值失败也计入已验证数量，但不计入成功样本均值；分片错误记录可能正在重试。', '',
         'complete settings 仅计入已经核验满 100 例的设置；OFM 每个分片为 10 例。分片错误在完整核验前继续保留，恢复中的错误另列 recovering/queued；逐分片状态见 shard_recovery.csv。', '',
         'verified 表示记录已核验，不代表采样成功或精度达标。成功记录由独立核验脚本读取预测数组、检查样本/观测位置并重算误差；失败记录核对状态及缺失指标。汇总命令只交叉核对这些核验证据。', '',
-        'ECI-OFM、FM-OFM 修正版按完整 100 例设置替换；FunDPS 按用户要求仅修复 Poisson forward/Rough 的样本 6，其引导权重为 10000，其他 99 例保留原权重 20000。CSV 的 result_version、sampling_parameters_json、selection_note 标注范围和参数；original_n_failed 保留原始失败数。这是失败触发的参数调整，不是独立验证集选参。', '',
+        'ECI-OFM Poisson inverse/Rough 和 FM-OFM 修正版按完整 100 例设置替换。ECI-OFM Poisson inverse ID/Smooth 按用户要求仅调整原误差超过 1000% 的 6/5 例：mixing 5→1，仍为 800 步，其余 189 例保留原结果。FunDPS 仅修复 Poisson forward/Rough 样本 6：引导权重 10000，其余 99 例仍为 20000。CSV 的 result_version、sampling_parameters_json、selection_note 标注范围和参数；original_n_failed 和 original_finite_over_1000_percent 保留原始计数。这些是观察测试集失败或极端误差后进行的参数调整，不是独立验证集选参。', '',
         '所有误差列均为百分数。`mean_percent` 仅在完整 100 例均有有限误差时填写；`finite_mean_percent` 等统计列仅使用已验证且成功的样本，可能来自未完成设置。必须结合 `status` 和 `n_finite` 阅读。', '',
         f'FM-FM 来自当前正文主表，标题中的样本数为 {paper_counts}，每项 n/expected_n 按对应标题填写；其他方法计划每格 100 例。DDIS/FunDPS 的 Darcy、NS、Burgers 没有已训练模型，本表不将其计入待采样任务。', '',
         '论文 NS inverse ID/Smooth、Burgers Random ID/Smooth 曾用相应测试集前 100 例调观测权重。各方法计算预算也不同，因此本表不是严格配对、预算匹配的算法比较。', '']
