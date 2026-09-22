@@ -287,7 +287,12 @@ def main():
         value = subprocess.check_output(ssh + ['server216', shlex.join(command)], text=True, timeout=180)
         result = json.loads(value)
         if result.get('round1_rows'):
-            write_report(dict(result, rows=result['round1_rows']), args.output / 'round1')
+            previous = result['round1_rows']
+            archive = dict(updated_at=result['updated_at'], rows=previous, result_selection='first_round_archive',
+                complete_settings=sum(r['verified'] == 100 for r in previous), expected_settings=27,
+                numeric_failures=sum(r['failures'] for r in previous),
+                extreme_finite_samples=sum(r['finite_over_1000_percent'] for r in previous))
+            write_report(archive, args.output / 'round1')
         write_report(result, args.output)
         print(f"Complete settings: {result['complete_settings']}/27; group errors: {len(result['errors'])}; retrying: {len(result.get('retrying', []))}")
         print(f"Numerically stable settings: {result['stable_settings']}/27; numeric failures: {result['numeric_failures']}; finite errors >1000%: {result['extreme_finite_samples']}; reaches FM-FM mean: {result['reaches_target_settings']}/27")

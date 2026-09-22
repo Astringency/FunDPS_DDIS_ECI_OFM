@@ -301,7 +301,12 @@ def merge_report(report):
             if (folder / 'worker_error.json').exists():
                 errors.append(dict(pde=group['pde'], task=group['task'], **read(folder / 'worker_error.json')))
             w = read(folder / 'worker.json') if (folder / 'worker.json').exists() else {}
-            active += int(Path('/proc', str(w.get('pid', -1))).exists())
+            try:
+                cmdline = Path('/proc', str(w.get('pid', -1)), 'cmdline').read_bytes()
+                active += int(b'refine_fm_ofm_strength.py' in cmdline and
+                    not any((folder / n).exists() for n in ('completed.json', 'worker_error.json')))
+            except (FileNotFoundError, ProcessLookupError, PermissionError):
+                pass
             for row in report['rows']:
                 if (row['pde'], row['task']) != (group['pde'], group['task']) or row['split'] not in group['test_splits']:
                     continue
