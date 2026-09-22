@@ -58,13 +58,21 @@ def ofm_sample(prior, truth, mask, args):
 
     # The upstream notebook's MAP stage is optional. Here the declared budget
     # is Langevin sampling from the GP, with no additional MAP optimization.
-    sampler = LangevinDynamics(latent, negative_log_posterior, lr=1e-3,
-        lr_final=8e-4, max_itr=args.langevin_steps, device=args.device,
+    lr = getattr(args, 'ofm_lr', 1e-3)
+    lr_final = getattr(args, 'ofm_lr_final', 8e-4)
+    if not 0 < lr_final < lr:
+        raise ValueError('OFM requires finite positive decreasing Langevin step sizes')
+    sampler = LangevinDynamics(latent, negative_log_posterior, lr=lr,
+        lr_final=lr_final, max_itr=args.langevin_steps, device=args.device,
         temperature=1, momentum=0)
     for step in range(args.langevin_steps):
         _, loss = sampler.sample(epoch=step)
         if step % 10 == 0:
             print(f"OFM Langevin {step}/{args.langevin_steps}, loss={loss}", flush=True)
+            if getattr(args, 'ofm_trace', False):
+                print(json.dumps(dict(step=step, latent_abs_max=latent.detach().abs().max().item(),
+                    gradient_abs_max=latent.grad.detach().abs().max().item(),
+                    lr=sampler.optim.param_groups[0]['lr'])), flush=True)
     return prior.inv_sample(latent.detach(), n_eval=4, forward=True)
 
 
