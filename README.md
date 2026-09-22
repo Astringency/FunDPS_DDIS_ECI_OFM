@@ -363,3 +363,34 @@ To reproduce a saved snapshot offline, add
 Use `--paper`, `--output`, `--host`, `--ssh-control-path` or `--local-root` to
 override paths/access. The older `reports/.../analyze.py` reproduces only the
 original frozen five-method snapshot; use the new command for current results.
+
+## FM-OFM guidance-strength confirmation (2026-09-22)
+
+`adapters/fm_ofm_strength_study.py` reuses verified guidance-screening results,
+freezes one strength-only candidate for each of nine PDE/task combinations,
+and compares it with the deployed baseline on validation IDs 64–79. These
+IDs were excluded from the earlier tuning IDs 0–7 and checks 16–23. A candidate
+must have no numerical failures and improve the confirmation mean by at least
+1%; otherwise the baseline is retained. The chosen configuration is frozen
+before evaluating ID/Smooth/Rough, 100 cases each. All settings use 100 sampler
+steps and 500 observations; official sampling and model code are unchanged.
+Original experiment results and the primary `metrics.csv` are retained.
+
+Server216 sessions `ddis_fm_ofm_strength_gpu0_20260922` through
+`ddis_fm_ofm_strength_gpu7_20260922` wait for at least 32 GiB free GPU memory,
+GPU utilization no greater than 65%, and CPU load below 110 before admitting
+each sampling job. They do not preempt existing samplers. This study does not
+use server193 or the heavily loaded server197 CPU.
+
+Refresh the separate comparison from the workstation with:
+
+```bash
+python3 ~/C01Python/DDIS_comparison_20260919/adapters/fm_ofm_strength_study.py --fetch
+```
+
+This writes `reports/fm_ofm_guidance_20260922/comparison.csv` and
+`comparison.json`. Incomplete settings have blank error means; failures are
+retained. `reaches_fm_fm_mean` compares the complete 100-case tuned mean with
+the manuscript mean, not a claim of statistical equivalence. Configuration,
+confirmation evidence, predictions and logs live under server216's main
+results root in `diagnostics/fm_ofm_strength_confirm_20260922/`.
