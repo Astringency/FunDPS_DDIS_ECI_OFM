@@ -310,17 +310,22 @@ this test-outlier parameter tuning and mixed configuration. Original extreme
 errors remain uncapped in `metrics_original.csv` and their original counts
 remain in `original_finite_over_1000_percent`.
 
-OFM uses two admitted regular sampling processes per GPU on server216 (16
-total), plus one bounded recovery process on GPU 2. Server197 runs two primary
-Darcy-forward queues and two bounded recovery queues (four samplers total).
-The recovery queues resume missing cases from the 19 interrupted shards and
-prioritize nearly complete shards; existing successful cases are retained.
+As of 2026-09-22, OFM's remaining work is Darcy forward. Server216 runs twelve
+bounded sampling queues across its eight GPUs for offsets 60/70/80/90 in each
+split (120 cases). Server197 retains offsets below 60 and runs four bounded
+recovery queues across two GPUs. The former server197 primary queues were
+retired after confirming they had no active GPU samplers: their old 76 GiB
+free-memory admission rule blocked behind the recovery processes. The two
+in-flight server197 samplers were preserved. Recovery queues resume missing
+cases and prioritize nearly complete shards; existing results are retained.
 Recovery processes require 30 GiB free at admission, use activation
 recomputation and a 12 GiB allocated-memory guard. No server193 job is used.
 Server197 results live under
 `/research_data/users/zhangxifeng/C01Python/FM4PDE/outputs/ofm_sampling_20260921`.
-Thirty Darcy-forward shards are reserved centrally, preserving 18 previously
-successful cases. The local tmux session `ddis_ofm_sync197_20260921` returns
+Thirty Darcy-forward shards were initially reserved centrally, preserving 18
+previously successful cases. Twelve unstarted shards were reassigned to
+server216; the server197 assignment now contains eighteen shards, including
+completed ones. The local tmux session `ddis_ofm_sync197_20260921` returns
 verified complete shards to server216; the single summary command remains the
 same. Raw interrupted shards are archived before publication, not overwritten.
 To run one manual synchronization after a local restart:
