@@ -125,6 +125,9 @@ def summarize(plan):
                 if confirmation.get(name, {}).get('mean') is not None else None)
             rows.append(dict(pde=pde, task=task, split=split, saved=len(cases), verified=n,
                 failures=failures, status=('complete_with_failures' if failures else 'complete') if n == 100 else 'pending',
+                finite_over_1000_percent=sum(v > 1000 for v in good),
+                finite_max_percent=max(good) if good else None,
+                finite_mean_percent=statistics.fmean(good) if good else None,
                 tuned_mean_percent=mean,
                 tuned_std_percent=statistics.stdev(good) if n == 100 and not failures else None,
                 previous_fm_ofm_mean_percent=float(references['FM-OFM']['mean_percent']),
@@ -147,8 +150,10 @@ def summarize(plan):
         except (FileNotFoundError, ProcessLookupError, PermissionError):
             active_retry = False
         (retrying if active_retry else errors).append(item)
-    return dict(updated_at=time.time(), complete_settings=sum(r['verified'] == 100 for r in rows),
+    report = dict(updated_at=time.time(), complete_settings=sum(r['verified'] == 100 for r in rows),
         expected_settings=27, rows=rows, errors=errors, retrying=retrying)
+    from refine_fm_ofm_strength import merge_report
+    return merge_report(report)
 
 
 def write_report(report, dest):
@@ -281,8 +286,14 @@ def main():
         command = ['python3', str(AD / Path(__file__).name), '--report']
         value = subprocess.check_output(ssh + ['server216', shlex.join(command)], text=True, timeout=180)
         result = json.loads(value)
+        if result.get('round1_rows'):
+            write_report(dict(result, rows=result['round1_rows']), args.output / 'round1')
         write_report(result, args.output)
         print(f"Complete settings: {result['complete_settings']}/27; group errors: {len(result['errors'])}; retrying: {len(result.get('retrying', []))}")
+        print(f"Numerically stable settings: {result['stable_settings']}/27; numeric failures: {result['numeric_failures']}; finite errors >1000%: {result['extreme_finite_samples']}; reaches FM-FM mean: {result['reaches_target_settings']}/27")
+        if result.get('refinement'):
+            s = result['refinement']
+            print(f"Refinement: {s['verified_settings']}/{s['expected_settings']} settings verified; active groups: {s['active_groups']}; group errors: {len(s['errors'])}")
         print(args.output / 'comparison.csv')
     elif args.report:
         print(json.dumps(summarize(read(PLAN)), allow_nan=False))

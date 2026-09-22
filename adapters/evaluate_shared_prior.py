@@ -49,7 +49,8 @@ def main(args):
     if existing_run.exists():
         args.eci_batch_size = json.loads(existing_run.read_text()).get('eci_batch_size', 1)
     fm_overrides = json.loads(args.fm_overrides.read_text()) if args.fm_overrides else {}
-    allowed = {'zeta_obs_a', 'zeta_obs_u', 'zeta_pde', 'clip_threshold', 'guidance_components'}
+    allowed = {'zeta_obs_a', 'zeta_obs_u', 'zeta_pde', 'clip_threshold', 'guidance_components',
+               'stochastic_guidance_coeff'}
     if set(fm_overrides) - allowed or (fm_overrides and args.method != 'fm4pde'):
         raise ValueError('Only authorized native guidance hyperparameters may be overridden')
     if args.method == 'ofm' and args.prior != 'ofm':
