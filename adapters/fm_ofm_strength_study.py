@@ -151,6 +151,57 @@ def write_report(report, dest):
     temporary.replace(dest / 'comparison.csv')
 
 
+def confirm(group, ids, gpu):
+    field = 'coefficient' if group['task'] == 'inverse' else 'solution'
+    values = {}
+    for label in ('baseline', 'candidate'):
+        v = run_cases(group, 'confirmation', 'id', label, group[label], ids, gpu)
+        directory = STUDY / group['pde'] / group['task'] / 'confirmation/id' / label
+        cases = [read(p) for p in directory.glob('case_*.json')]
+        errors = [r['relative_l2_' + field] for r in cases if r['status'] == 'ok']
+        values[label] = dict(mean=v['all_case_mean_relative_l2_' + field], failures=v['failures'],
+            over_1000=sum(x > 10 for x in errors), max_error=max(errors) if errors else None)
+    stable = lambda r: r['failures'] == 0 and r['over_1000'] == 0
+    candidate, baseline = values['candidate'], values['baseline']
+    use_candidate = stable(candidate) and (not stable(baseline) or candidate['mean'] <= .99 * baseline['mean'])
+    selected = 'candidate' if use_candidate else 'baseline'
+    if not stable(values[selected]):
+        raise RuntimeError('Neither configuration passed confirmation without numerical failures or >1000% errors')
+    return dict(selected=selected, overrides=group[selected], confirmation=values,
+        confirmation_ids=ids, screening_source=group['screening_source'],
+        rule='No numerical failures or >1000% errors; candidate needs at least 1% improvement unless baseline is unstable.',
+        frozen_before_test_at=time.time())
+
+
+def retry_safe_helmholtz(gpu):
+    """Repeat rejected confirmation with the previously audited safety clip."""
+    plan = read(PLAN)
+    group = next(g for g in plan['groups'] if (g['pde'], g['task']) == ('helmholtz', 'inverse'))
+    group = dict(group, baseline={**group['baseline'], 'clip_threshold': 50},
+        candidate={**group['candidate'], 'clip_threshold': 50})
+    folder = STUDY / 'helmholtz/inverse'
+    claim = (folder / 'claim.lock').open('w')
+    fcntl.flock(claim, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    assert (folder / 'rejected_clip200_confirmation/decision.json').exists()
+    atomic(folder / 'retry_plan.json', dict(group=group, confirmation_ids=list(range(80, 96)),
+        reason='Clip 200 produced extreme finite errors on confirmation, rejected before using its test errors. Clip 50 was already independently audited in the earlier full-setting repair.'))
+    try:
+        decision = confirm(group, list(range(80, 96)), gpu)
+        decision['selection_note'] = 'Second validation-only round after rejecting unstable clip 200; uses previously stable clip 50 and fresh confirmation IDs 80–95.'
+        atomic(folder / 'decision.json', decision)
+        for split in ('id', 'smooth', 'rough'):
+            run_cases(group, 'test', split, 'selected', decision['overrides'], list(range(100)), gpu)
+            write_report(summarize(plan), STUDY / 'report')
+        atomic(folder / 'completed.json', dict(time=time.time(), gpu=gpu))
+        # Other workers skip this group until its complete, audited replacement exists.
+        (folder / 'worker_error.json').rename(folder / 'rejected_clip200_confirmation/original_error.json')
+    except Exception as error:
+        atomic(folder / 'worker_error.json', dict(error=str(error), time=time.time(), gpu=gpu))
+        raise
+    finally:
+        claim.close()
+
+
 def worker(gpu):
     plan = read(PLAN)
     STUDY.mkdir(parents=True, exist_ok=True)
@@ -181,19 +232,7 @@ def worker(gpu):
             claimed = True
             atomic(folder / 'worker.json', dict(pid=os.getpid(), gpu=gpu, started_at=time.time()))
             try:
-                field = 'coefficient' if group['task'] == 'inverse' else 'solution'
-                values = {}
-                for label in ('baseline', 'candidate'):
-                    v = run_cases(group, 'confirmation', 'id', label, group[label], plan['confirmation_ids'], gpu)
-                    values[label] = dict(mean=v['all_case_mean_relative_l2_' + field], failures=v['failures'])
-                candidate, baseline = values['candidate'], values['baseline']
-                use_candidate = candidate['failures'] == 0 and (baseline['failures'] > 0 or candidate['mean'] <= .99 * baseline['mean'])
-                selected = 'candidate' if use_candidate else 'baseline'
-                if values[selected]['failures']:
-                    raise RuntimeError('Neither fixed configuration passed confirmation')
-                decision = dict(selected=selected, overrides=group[selected], confirmation=values,
-                    confirmation_ids=plan['confirmation_ids'], screening_source=group['screening_source'],
-                    rule=plan['acceptance'], frozen_before_test_at=time.time())
+                decision = confirm(group, plan['confirmation_ids'], gpu)
                 old = folder / 'decision.json'
                 if old.exists():
                     assert read(old)['overrides'] == decision['overrides']
@@ -220,6 +259,7 @@ def main():
     parser.add_argument('--worker-gpu', type=int)
     parser.add_argument('--report', action='store_true')
     parser.add_argument('--fetch', action='store_true')
+    parser.add_argument('--retry-safe-helmholtz', action='store_true')
     parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[1] / 'reports/fm_ofm_guidance_20260922')
     args = parser.parse_args()
     if args.fetch:
@@ -235,6 +275,10 @@ def main():
         print(args.output / 'comparison.csv')
     elif args.report:
         print(json.dumps(summarize(read(PLAN)), allow_nan=False))
+    elif args.retry_safe_helmholtz:
+        if args.worker_gpu is None:
+            parser.error('--retry-safe-helmholtz requires --worker-gpu')
+        retry_safe_helmholtz(args.worker_gpu)
     elif args.worker_gpu is not None:
         worker(args.worker_gpu)
     else:
