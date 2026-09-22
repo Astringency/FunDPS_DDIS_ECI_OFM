@@ -136,9 +136,19 @@ def summarize(plan):
                 selected=decision.get('selected'), parameters_json=json.dumps(decision.get('overrides', {}), sort_keys=True),
                 observation_count=500, sampling_steps=100,
                 comparison_note='FM-FM is the manuscript reference; settings differ in pretrained network. Parameters selected on validation only.'))
+    errors, retrying = [], []
+    for p in STUDY.glob('*/*/worker_error.json'):
+        item = dict(group=str(p.parent.relative_to(STUDY)), **read(p))
+        worker_path = p.parent / 'worker.json'
+        worker = read(worker_path) if worker_path.exists() else {}
+        process = Path('/proc') / str(worker.get('pid', -1)) / 'cmdline'
+        try:
+            active_retry = worker.get('retry') == 'safe_clip50' and b'--retry-safe-helmholtz' in process.read_bytes()
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            active_retry = False
+        (retrying if active_retry else errors).append(item)
     return dict(updated_at=time.time(), complete_settings=sum(r['verified'] == 100 for r in rows),
-        expected_settings=27, rows=rows,
-        errors=[dict(group=str(p.parent.relative_to(STUDY)), **read(p)) for p in STUDY.glob('*/*/worker_error.json')])
+        expected_settings=27, rows=rows, errors=errors, retrying=retrying)
 
 
 def write_report(report, dest):
@@ -272,7 +282,7 @@ def main():
         value = subprocess.check_output(ssh + ['server216', shlex.join(command)], text=True, timeout=180)
         result = json.loads(value)
         write_report(result, args.output)
-        print(f"Complete settings: {result['complete_settings']}/27; group errors: {len(result['errors'])}")
+        print(f"Complete settings: {result['complete_settings']}/27; group errors: {len(result['errors'])}; retrying: {len(result.get('retrying', []))}")
         print(args.output / 'comparison.csv')
     elif args.report:
         print(json.dumps(summarize(read(PLAN)), allow_nan=False))
