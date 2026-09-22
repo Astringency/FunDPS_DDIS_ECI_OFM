@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import socket
 
 OLD = Path('/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919')
 REL = Path('diagnostics/fm_ofm_strength_refine_20260922')
@@ -57,8 +58,10 @@ def export(runtime):
     print(json.dumps(dict(listing=str(listing), files=len(files), bytes=sum(r['bytes'] for r in inventory.values()))))
 
 
-def localize(runtime):
-    root = Path(runtime['root'])
+def localize(runtime, storage_root=None):
+    # A mounted directory may be audited directly on its storage server.
+    # Relative truth paths keep the localized manifests valid on the GPU host.
+    root = storage_root or Path(runtime['root'])
     record = read(root / REL / ('migration_inventory_' + runtime['host'] + '.json'))
     audit_path = root / REL / 'migration_verified.json'
     if audit_path.exists():
@@ -84,6 +87,7 @@ def localize(runtime):
         write(folder / 'ready.json', ready)
         manifests.append(dict(path=str(p), original_sha256=original_sha, relocated_sha256=sha(p)))
     write(audit_path, dict(files_verified=len(record['files']), runtime=runtime, manifests=manifests,
+        verification_storage_root=str(root), verification_host=socket.gethostname(),
         retained_trials='Completed trials are byte-identical copies with original server216 provenance; only new trials use relocated manifests.'))
     print(json.dumps(dict(files_verified=len(record['files']), host=runtime['host'])))
 
@@ -92,5 +96,9 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--runtime', type=Path, required=True)
     p.add_argument('--mode', choices=['export', 'localize'], required=True)
+    p.add_argument('--storage-root', type=Path)
     a = p.parse_args()
-    (export if a.mode == 'export' else localize)(read(a.runtime))
+    if a.mode == 'export':
+        export(read(a.runtime))
+    else:
+        localize(read(a.runtime), a.storage_root)
