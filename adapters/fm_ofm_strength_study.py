@@ -120,6 +120,9 @@ def summarize(plan):
             references = {r['method']: r for r in plan['references']
                 if (r['pde'], r['task'], r['split']) == (pde, task, split)}
             reference = float(references['FM-FM']['mean_percent'])
+            confirmation = decision.get('confirmation', {})
+            confirmation_mean = lambda name: (confirmation[name]['mean'] * 100
+                if confirmation.get(name, {}).get('mean') is not None else None)
             rows.append(dict(pde=pde, task=task, split=split, saved=len(cases), verified=n,
                 failures=failures, status=('complete_with_failures' if failures else 'complete') if n == 100 else 'pending',
                 tuned_mean_percent=mean,
@@ -128,6 +131,8 @@ def summarize(plan):
                 fm_fm_paper_mean_percent=reference,
                 tuned_to_fm_fm_ratio=mean / reference if mean is not None else None,
                 reaches_fm_fm_mean=mean <= reference if mean is not None else None,
+                confirmation_baseline_mean_percent=confirmation_mean('baseline'),
+                confirmation_candidate_mean_percent=confirmation_mean('candidate'),
                 selected=decision.get('selected'), parameters_json=json.dumps(decision.get('overrides', {}), sort_keys=True),
                 observation_count=500, sampling_steps=100,
                 comparison_note='FM-FM is the manuscript reference; settings differ in pretrained network. Parameters selected on validation only.'))
