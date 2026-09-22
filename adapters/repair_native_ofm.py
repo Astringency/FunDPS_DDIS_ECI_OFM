@@ -47,6 +47,33 @@ def location(root, run, record):
     return root / 'diagnostics' / NAME / run['pde'] / run['task'] / run['split'] / f"case_{record['sample_id']:03d}"
 
 
+def audit_accepted(root):
+    from validate_shared_prior import validate
+    repair_root = root / 'diagnostics' / NAME
+    with (repair_root / 'audit.lock').open('w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        for path in sorted(repair_root.rglob('accepted.json')):
+            audit_path = path.with_name('audit.json')
+            if audit_path.exists():
+                continue
+            accepted = json.loads(path.read_text())
+            original = root / accepted['original_source']
+            assert digest(original) == accepted['original_sha256']
+            before = json.loads(original.read_text())
+            assert before['status'] == 'failed'
+            output = root / accepted['output']
+            verified = validate(output)
+            assert verified['successes'] == 1 and verified['failures'] == 0
+            run = json.loads((output / 'run.json').read_text())
+            record = json.loads((output / original.name).read_text())
+            assert run['case_indices'] == [before['sample_id']] == verified['sample_ids']
+            atomic(audit_path, dict(accepted=accepted, original=before,
+                original_run=json.loads((original.parent / 'run.json').read_text()),
+                case=record, run=run, verified=verified,
+                prediction_sha256=digest(output / f"prediction_{record['sample_id']:03d}.npy")))
+            print('Independently audited', original, flush=True)
+
+
 def sample(a):
     from evaluate_shared_prior import main
     run = json.loads((a.original.parent / 'run.json').read_text())
@@ -151,6 +178,8 @@ def worker(a):
                     lr_final=lr*0.8, selection='first finite in declared step-size sequence',
                     accepted_at=time.time()))
                 accepted = True
+                subprocess.run([sys.executable, str(Path(__file__).resolve()), '--root', str(a.root), '--audit'],
+                    env=env, check=True)
                 print('Repaired', original, 'lr', lr, flush=True)
                 break
         atomic(folder / 'state.json', dict(state='verified' if accepted else 'needs_review', updated_at=time.time()))
@@ -168,8 +197,11 @@ if __name__ == '__main__':
     p.add_argument('--gpu', type=int, default=0)
     p.add_argument('--slot', type=int, choices=(0, 2), default=0)
     p.add_argument('--pilot', action='store_true')
+    p.add_argument('--audit', action='store_true')
     a = p.parse_args()
-    if a.original:
+    if a.audit:
+        audit_accepted(a.root)
+    elif a.original:
         assert a.output is not None and a.lr in PARAMETERS
         sample(a)
     else:

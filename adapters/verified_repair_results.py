@@ -94,7 +94,69 @@ def collect_repairs(root, snapshot):
             repairs.append(dict(run_key=key, meta=meta, cases=cases))
     repairs.extend(collect_fundps_repair(root, snapshot))
     repairs.extend(collect_eci_outlier_repairs(root, snapshot))
+    repairs.extend(collect_native_ofm_repairs(root, snapshot))
     return repairs
+
+
+def collect_native_ofm_repairs(root, snapshot):
+    """Publish only separately audited numeric retries; preserve every success."""
+    grouped = {}
+    base = root / 'diagnostics/ofm_numeric_repair_20260922'
+    for path in sorted(base.glob('*/*/*/case_*/audit.json')):
+        audit = json.loads(path.read_text())
+        a, run, record, verified = (audit[k] for k in ('accepted', 'run', 'case', 'verified'))
+        original = root / a['original_source']
+        output = root / a['output']
+        assert hashlib.sha256(original.read_bytes()).hexdigest() == a['original_sha256']
+        assert json.loads(original.read_text()) == audit['original']
+        assert audit['original']['status'] == 'failed'
+        assert json.loads((original.parent / 'run.json').read_text()) == audit['original_run']
+        old = audit['original_run']
+        assert json.loads((output / 'run.json').read_text()) == run
+        assert json.loads((output / original.name).read_text()) == record
+        assert json.loads((output / 'verified_summary.json').read_text()) == verified
+        assert hashlib.sha256((output / f"prediction_{record['sample_id']:03d}.npy").read_bytes()).hexdigest() == audit['prediction_sha256']
+        assert run['prior'] == run['method'] == 'ofm' and run['pde'] == 'darcy'
+        assert run['task'] == 'forward' or (run['task'], run['split']) == ('inverse', 'smooth')
+        for k in ('checkpoint_sha256', 'truth_sha256', 'seed', 'langevin_steps', 'hutchinson',
+                  'noise_variance', 'observations', 'observation_noise', 'source_revisions', 'pde', 'task', 'split'):
+            assert run[k] == old[k], (path, k)
+        assert run['ofm_lr'] == a['lr'] in (1e-4, 1e-5, 1e-6)
+        assert run['ofm_lr_final'] == a['lr_final'] == a['lr'] * .8
+        assert run['count'] == 1 and run['case_indices'] == verified['sample_ids'] == [record['sample_id']]
+        assert verified['cases'] == verified['successes'] == 1 and verified['failures'] == 0
+        assert record['status'] == 'ok'
+        for field in ('coefficient', 'solution'):
+            value = record['relative_l2_' + field]
+            assert math.isfinite(value) and value >= 0
+            assert math.isclose(value, verified['successful_case_mean_relative_l2_' + field], rel_tol=1e-10)
+        old_key = str(original.parent.relative_to(root))
+        original_meta = snapshot['runs'].get(old_key, {})
+        if not original_meta.get('verified'):
+            continue
+        fields = dict(method='OFM', pde=run['pde'], task=run['task'], split=run['split'])
+        key = (run['pde'], run['task'], run['split'])
+        grouped.setdefault(key, []).append((fields, run, record, a, path))
+    result = []
+    for group, items in grouped.items():
+        fields, run = items[0][:2]
+        key = str((base.joinpath(*group) / 'audited_selected_samples').relative_to(root))
+        records = [dict(record, **fields, run_key=key,
+            case_source=f"{a['output']}/case_{record['sample_id']:03d}.json") for _, _, record, a, _ in items]
+        ids = sorted(r['sample_id'] for r in records)
+        assert len(ids) == len(set(ids))
+        verified = dict(cases=len(ids), successes=len(ids), failures=0, sample_ids=ids,
+            checkpoint_sha256=run['checkpoint_sha256'], verification_source=';'.join(str(p.relative_to(root)) for *_, p in items))
+        for field in ('coefficient', 'solution'):
+            verified['successful_case_mean_relative_l2_' + field] = statistics.fmean(r['relative_l2_' + field] for r in records)
+        parameters = dict(original_lr=1e-3, original_lr_final=8e-4, langevin_steps=100,
+            retry_sequence=[1e-4, 1e-5, 1e-6], sample_parameters=[dict(sample_id=r['sample_id'], lr=a['lr'], lr_final=a['lr_final'])
+            for _, _, r, a, _ in items])
+        meta = dict(**fields, run=run, verified=verified, result_version='repair_numeric_langevin_lr_20260922',
+            sampling_parameters=parameters,
+            selection_note='Only original numerical failures use smaller official Langevin step sizes; first finite retry, not lowest error. All original successes remain unchanged. Same weights, seeds, 500 observations and 100 steps. Failure-triggered test-set tuning, not held-out selection.')
+        result.append(dict(run_key=key, meta=meta, cases=records, repair_scope='selected_samples'))
+    return result
 
 
 def collect_eci_outlier_repairs(root, snapshot):
@@ -209,7 +271,8 @@ def apply_repairs(snapshot):
             ids = [r['sample_id'] for r in repair['cases']]
             is_fundps = key == ('FunDPS', 'poisson', 'forward', 'rough') and ids == [6]
             is_eci = key[:3] == ('ECI-OFM', 'poisson', 'inverse') and key[3] in ('id', 'smooth')
-            if key in replaced or not (is_fundps or is_eci) or not ids or len(set(ids)) != len(ids):
+            is_ofm = key[:2] == ('OFM', 'darcy') and (key[2] == 'forward' or key[2:] == ('inverse', 'smooth'))
+            if key in replaced or not (is_fundps or is_eci or is_ofm) or not ids or len(set(ids)) != len(ids):
                 raise ValueError(f'Unexpected selected-sample repair: {key}')
             if any(tuple(r[k] for k in fields) != key or r['run_key'] != repair['run_key'] for r in repair['cases']):
                 raise ValueError(f'Repair case belongs to the wrong setting: {key}')
@@ -218,6 +281,8 @@ def apply_repairs(snapshot):
                 raise ValueError('Selected-sample repair must replace each original ID exactly once')
             if is_fundps and previous[0]['status'] != 'failed':
                 raise ValueError('Selected-sample repair must replace exactly the documented failed sample')
+            if is_ofm and any(r['status'] != 'failed' for r in previous):
+                raise ValueError('OFM repair may replace only documented failed samples')
             if is_eci:
                 outliers = [r['sample_id'] for r in selected['cases'] if tuple(r[k] for k in fields) == key
                     and r['status'] == 'ok' and r['relative_l2_coefficient'] > 10]

@@ -186,6 +186,7 @@ def aggregate(snapshot):
         recovery_states = [recovery_status(r, snapshot) for r in runs
             if r.get('worker_failure') and not r.get('verified')]
         n = len(records)
+        verified_ids = {c['sample_id'] for c in records}
         status = ('complete_with_failures' if failed else 'complete') if n == 100 else ('partial' if runs else 'not_started')
         avg = statistics.fmean(values) * 100 if values else None
         row = dict(method=method, pde=pde, task=task, split=split, n=n,
@@ -202,7 +203,8 @@ def aggregate(snapshot):
             expected_n=100, n_saved=len(cases), n_verified=n, n_unverified=len(cases)-n,
             n_pending=100-n, status=status,
             worker_failure_runs=sum(bool(r.get('worker_failure')) and not r.get('verified') for r in runs),
-            verified_shards=sum(bool(r.get('verified')) for r in runs) if method == 'OFM' else 0,
+            verified_shards=sum(all(i in verified_ids for i in range(start, start + 10))
+                for start in range(0, 100, 10)) if method == 'OFM' else 0,
             recovery_active_shards=sum(s in ('running', 'validating') for s in recovery_states),
             recovery_queued_shards=sum(s in ('queued', 'awaiting_sync') for s in recovery_states),
             recovery_failed_shards=recovery_states.count('failed'),
@@ -287,7 +289,7 @@ def export(snapshot, paper, output, original_only=False):
                'Only metadata and saved verification summaries are checked; prediction arrays are not revalidated by this command.',
                'Verified includes documented numerical failures; n_finite counts verified successful cases, not accuracy-qualified cases.',
                'metrics_original.csv always preserves original-configuration statistics.',
-               'Repair parameters were selected after inspecting failures/outliers; result_version and selection_note identify the scope. FunDPS replaces only failed sample 6. ECI-OFM Poisson inverse ID/Smooth replaces only the 6/5 original finite outliers above 1000 percent. Other repairs replace whole settings.'])
+               'Repair parameters were selected after inspecting failures/outliers; result_version and selection_note identify the scope. FunDPS replaces only failed sample 6. ECI-OFM Poisson inverse ID/Smooth replaces only the 6/5 original finite outliers above 1000 percent. Native OFM replaces only independently audited numeric failures using smaller official Langevin step sizes; original successes remain unchanged. Other repairs replace whole settings.'])
     report = ['# 最新采样统计', '', f'服务器快照时间：{snapshot["captured_at"]}', '',
               f'结果版本：{summary["result_selection"]}；含修复结果的设置：{summary["repaired_settings"]}。原配置统计另存 `metrics_original.csv`。', '',
               '| 方法 | 已保存 | 已验证 / 计划 | 满 100 例的设置 | 数值失败 | 分片错误记录 |',

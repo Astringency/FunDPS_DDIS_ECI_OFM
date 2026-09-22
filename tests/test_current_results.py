@@ -45,6 +45,31 @@ def add_repair(value):
 
 
 class CurrentResultsTest(unittest.TestCase):
+    def test_partial_ofm_repairs_preserve_successes_pending_failures_and_shard_count(self):
+        value = snapshot(range(10), failed=(2, 3))
+        old_key, old_meta = next(iter(value['runs'].items()))
+        fields = dict(method='OFM', pde='darcy', task='forward', split='id')
+        old_meta.update(fields)
+        old_meta['verified']['successful_case_mean_relative_l2_solution'] = .25
+        for row in value['cases']:
+            row.update(fields)
+        repaired = dict(value['cases'][2], run_key='diagnostics/ofm_retry', status='ok',
+            relative_l2_solution=.1, relative_l2_coefficient=.2)
+        meta = dict(fields, verified=dict(cases=1, successes=1, failures=0, sample_ids=[2],
+            successful_case_mean_relative_l2_solution=.1, successful_case_mean_relative_l2_coefficient=.2))
+        value['repairs'] = [dict(run_key=repaired['run_key'], meta=meta, cases=[repaired], repair_scope='selected_samples')]
+        before = copy.deepcopy(value)
+        selected = apply_repairs(value)
+        self.assertEqual(value, before)
+        self.assertEqual([r for r in selected['cases'] if r['sample_id'] != 2],
+            [r for r in value['cases'] if r['sample_id'] != 2])
+        row = next(r for r in aggregate(selected) if all(r[k] == v for k, v in fields.items()))
+        self.assertEqual((row['n_verified'], row['n_failed'], row['verified_shards']), (10, 1, 1))
+        self.assertIsNone(row['mean_percent'])
+        value['cases'][2]['status'] = 'ok'
+        with self.assertRaisesRegex(ValueError, 'only documented failed samples'):
+            apply_repairs(value)
+
     def test_selected_eci_outlier_preserves_other_records_and_original_audit(self):
         value = snapshot()
         original_key, original_meta = next(iter(value['runs'].items()))
