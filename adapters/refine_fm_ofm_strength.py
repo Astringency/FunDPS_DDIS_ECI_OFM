@@ -328,5 +328,17 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--worker-gpu', type=int, required=True)
     p.add_argument('--only')
+    p.add_argument('--probe', action='store_true')
     a = p.parse_args()
-    worker(a.worker_gpu, a.only)
+    if a.probe:
+        STUDY.mkdir(parents=True, exist_ok=True)
+        plan = read(PLAN)
+        group = plan['groups'][0]
+        assert prepare_assets(group['pde']), 'Reserved validation export not ready'
+        result = evaluate(group, 'preflight', 'rough', 'anchor', group['candidates']['anchor'], [0, 1], a.worker_gpu)
+        assert result['failures'] == 0 and result['over_1000'] == 0
+        assert result['peak_reserved_bytes'] < 20 * 1024 ** 3
+        atomic(STUDY / 'preflight.json', dict(result=result, gpu=a.worker_gpu, completed_at=time.time()))
+        print(json.dumps(result), flush=True)
+    else:
+        worker(a.worker_gpu, a.only)
