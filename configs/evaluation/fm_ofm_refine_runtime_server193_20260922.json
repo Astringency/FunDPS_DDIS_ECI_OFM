@@ -14,10 +14,10 @@
   "min_free_mib": 16384,
   "max_cpu_load": null,
   "cpu_threads": 1,
-  "nice": 19,
+  "nice": 0,
   "path_map": {
     "/data1/zjinzxf2025/C01Python/DDIS_comparison_20260919": "/home/zhangxf/C01Python/DDIS_comparison_20260919",
     "/data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919": "/home/zhangxf/share/zhangxfA100/large_storage/outputs/FM4PDEbaseline/fm_ofm_guidance_refine_20260922"
   },
-  "resource_note": "User-directed host migration. One low-priority, single-thread worker per otherwise idle GPU; CPU run-queue gate replaced by measured full-schedule GPU preflight. GPU memory and utilization gates remain."
+  "resource_note": "User-directed host migration. One low-priority, single-thread worker per otherwise idle GPU; CPU run-queue gate replaced by measured full-schedule GPU preflight. GPU memory and utilization gates remain. On server193, nice 19 starved the single-thread sampler during imports (2 CPU seconds in 74 wall seconds); use ordinary priority 0 with the same one-thread limit."
 }
