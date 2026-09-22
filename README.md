@@ -376,6 +376,14 @@ before evaluating ID/Smooth/Rough, 100 cases each. All settings use 100 sampler
 steps and 500 observations; official sampling and model code are unchanged.
 Original experiment results and the primary `metrics.csv` are retained.
 
+Confirmation also rejects finite errors above 1000%. The initial Helmholtz
+inverse clip-200 configuration failed this check on IDs 64–79. Its confirmation
+and partial test files are preserved under `rejected_clip200_confirmation` and
+excluded from the comparison. A second validation round on fresh IDs 80–95
+used the previously audited clip 50 for both baseline and candidate; stronger
+observation guidance did not improve it, so the stable clip-50 baseline was
+retained. Test errors were not used to choose these parameters.
+
 Server216 sessions `ddis_fm_ofm_strength_gpu0_20260922` through
 `ddis_fm_ofm_strength_gpu7_20260922` wait for at least 32 GiB free GPU memory,
 GPU utilization no greater than 65%, and CPU load below 110 before admitting
