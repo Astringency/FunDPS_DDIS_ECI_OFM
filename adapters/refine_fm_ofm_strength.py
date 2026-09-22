@@ -322,7 +322,7 @@ def merge_report(report):
             w = read(folder / 'worker.json') if (folder / 'worker.json').exists() else {}
             try:
                 cmdline = Path('/proc', str(w.get('pid', -1)), 'cmdline').read_bytes()
-                active += int(b'refine_fm_ofm_strength.py' in cmdline and
+                active += int(w.get('host', 'server216') == RUNTIME.get('host', 'server216') and b'refine_fm_ofm_strength.py' in cmdline and
                     not any((folder / n).exists() for n in ('completed.json', 'worker_error.json')))
             except (FileNotFoundError, ProcessLookupError, PermissionError):
                 pass

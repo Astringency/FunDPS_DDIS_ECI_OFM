@@ -46,6 +46,24 @@ class RefinementTest(unittest.TestCase):
                 with self.assertRaises((AssertionError, KeyError)):
                     study.merge_report(copy.deepcopy(value))
 
+    def test_remote_reports_only_merge_assigned_groups_and_do_not_double_count(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            groups = [dict(pde=p, task='forward', test_splits=['id']) for p in ('poisson', 'helmholtz')]
+            (root / 'plan.json').write_text(json.dumps(dict(groups=groups)))
+            for g in groups:
+                folder = root / g['pde'] / g['task']
+                folder.mkdir(parents=True)
+                (folder / 'worker_error.json').write_text(json.dumps(dict(error=g['pde'])))
+            value = dict(rows=[row(), dict(row(), pde='helmholtz')])
+            with patch.object(study, 'PLAN', root / 'plan.json'), patch.object(study, 'STUDY', root):
+                for host, pde in [('server197', 'poisson'), ('server193', 'helmholtz'), ('server193', 'helmholtz')]:
+                    with patch.object(study, 'RUNTIME', dict(host=host, groups=[pde + '/forward'])):
+                        value = study.merge_report(value)
+            self.assertEqual(len(value['refinement']['errors']), 2)
+            self.assertEqual(set(value['refinement']['hosts']), {'server197', 'server193'})
+            self.assertEqual(value['round1_rows'], [row(), dict(row(), pde='helmholtz')])
+
 
 if __name__ == '__main__':
     unittest.main()
