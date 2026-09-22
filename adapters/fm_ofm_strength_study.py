@@ -38,9 +38,9 @@ def atomic(path, value):
 
 
 def resources(gpu):
-    free = int(subprocess.check_output(['nvidia-smi', '-i', str(gpu),
-        '--query-gpu=memory.free', '--format=csv,noheader,nounits']))
-    return free >= 32768 and os.getloadavg()[0] < 110
+    free, utilization = map(int, subprocess.check_output(['nvidia-smi', '-i', str(gpu),
+        '--query-gpu=memory.free,utilization.gpu', '--format=csv,noheader,nounits'], text=True).split(','))
+    return free >= 32768 and utilization <= 65 and os.getloadavg()[0] < 110
 
 
 def run_cases(group, phase, split, label, overrides, ids, gpu):
