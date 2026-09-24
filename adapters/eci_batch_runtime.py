@@ -29,6 +29,19 @@ class FixedInitialNoise:
         return self.value.clone()
 
 
+class InitialThenPriorNoise:
+    """Preserve the per-case initial draws, then use the official refresh prior."""
+    def __init__(self, value, prior):
+        self.value, self.prior, self.calls = value, prior, 0
+
+    def sample(self, grid, dims, n_samples=1):
+        self.calls += 1
+        if self.calls == 1:
+            assert list(self.value.shape) == [n_samples, *dims]
+            return self.value.clone()
+        return self.prior.sample(grid, dims, n_samples=n_samples)
+
+
 def combine_extra(extras):
     if all(x is None for x in extras):
         return None
@@ -62,7 +75,7 @@ def run_eci_batches(args, indices, saved, assets, task, net, normalizer, payload
         torch.cuda.reset_peak_memory_stats()
         for index in batch_ids:
             truth = case_ground_truth(saved['ground_truth'], index, args.device)
-            mask, _ = common_masks(truth, index, args.seed, task if args.pde != 'burger' else 'inverse')
+            mask, _ = common_masks(truth, index, args.seed, task if args.pde != 'burger' else 'inverse', args.data_size)
             config = load_config(args.fm4pde / 'configs/main' / task / f'{args.pde}.yaml', {
                 'test_type': args.split, 'data_path': assets['splits'][args.split]['source_file'],
                 'checkpoint_path': str(args.checkpoint), 'device': args.device,
@@ -75,10 +88,14 @@ def run_eci_batches(args, indices, saved, assets, task, net, normalizer, payload
             draws.append(draw)
             noise_hashes.append(hashlib.sha256(draw.detach().cpu().numpy().tobytes()).hexdigest())
         target = torch.cat(truths)
-        fixed = FixedInitialNoise(torch.cat(draws))
+        resample = getattr(args, 'eci_resample', None)
+        fixed = (FixedInitialNoise(torch.cat(draws)) if resample is None else
+                 InitialThenPriorNoise(torch.cat(draws), noise))
+        if resample is not None:
+            torch.manual_seed(args.seed + batch_ids[0])
         eci = SimpleNamespace(model=ECIVelocityAdapter(net, combine_extra(extras)), gp=fixed)
         with torch.no_grad():
-            sampled = FFM.eci_sample(eci, len(batch_ids), args.eci_steps, args.eci_mix, None,
+            sampled = FFM.eci_sample(eci, len(batch_ids), args.eci_steps, args.eci_mix, resample,
                 [channels, 128, 128], args.device,
                 DirichletCondition(value=normalizer.transform(target), mask=torch.cat(masks)))
             prediction = normalizer.inverse_transform(sampled).detach().cpu().numpy().astype(np.float64)

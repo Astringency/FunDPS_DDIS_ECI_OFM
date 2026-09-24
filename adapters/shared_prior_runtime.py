@@ -88,9 +88,11 @@ def load_prior(args, channels):
 def case_ground_truth(saved, index, device):
     from sampling.data import PDEGroundTruth
 
+    case_count = len(saved['metadata'].get('sample_offsets') or []) or 100
+
     def select(value):
         if isinstance(value, torch.Tensor):
-            if value.ndim > 0 and value.shape[0] == 100:
+            if value.ndim > 0 and value.shape[0] == case_count:
                 value = value[index:index + 1]
             return value.to(device)
         if isinstance(value, dict):
@@ -105,11 +107,11 @@ def case_ground_truth(saved, index, device):
     return PDEGroundTruth(**values)
 
 
-def common_masks(truth, index, seed=0, task='inverse'):
+def common_masks(truth, index, seed=0, task='inverse', count=100):
     from sampling.masks import PairMasks
-    coefficient_indices, solution_indices = pair_observation_indices(seed)
-    coefficient = torch.zeros_like(truth.coef)
-    solution = torch.zeros_like(truth.sol)
+    coefficient_indices, solution_indices = pair_observation_indices(seed, count=count)
+    coefficient = torch.zeros(truth.coef.shape, dtype=truth.coef.dtype, device=truth.coef.device)
+    solution = torch.zeros(truth.sol.shape, dtype=truth.sol.dtype, device=truth.sol.device)
     if task in ('forward', 'both'):
         coefficient.reshape(-1)[torch.as_tensor(coefficient_indices[index], device=coefficient.device)] = 1
     if task in ('inverse', 'both'):

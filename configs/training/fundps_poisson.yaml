@@ -1,5 +1,5 @@
-outdir: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/training/fundps/poisson
-data: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/data/preprocessing/train/data/DiffPDE/poisson_hf
+outdir: outputs/training/fundps_poisson
+data: data/preprocessed/train/poisson
 resolution: 64
 cond: false
 arch: ddpmpp-uno

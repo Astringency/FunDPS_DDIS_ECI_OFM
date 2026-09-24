@@ -1,8 +1,8 @@
-outdir: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/evaluation/ddis/poisson/rough
+outdir: outputs/evaluation/ddis_poisson_rough
 name: fm4pde_poisson_rough_first100
 task: inverse
 dataset: poisson
-data_path: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/data/preprocessing/rough/data/DiffPDE/poisson_test_hf
+data_path: __set_by_launcher__
 data_offset: 0
 resolution: 128
 max_size: 100

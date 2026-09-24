@@ -27,6 +27,7 @@ def acquire_native_slot(root, exclusive=False):
         raise ValueError('At most two independently profiled OFM slots per GPU')
     if exclusive and slot != 0:
         raise ValueError('High-memory tasks must use the primary OFM slot')
+    (Path(root) / 'locks').mkdir(parents=True, exist_ok=True)
     locks = []
     for selected in ([0, 1] if exclusive else [slot]):
         suffix = '' if selected == 0 else f'_slot_{selected}'

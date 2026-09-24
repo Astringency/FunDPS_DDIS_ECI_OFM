@@ -48,8 +48,7 @@ def main(args):
         task = 'both' if pde == 'burger' else 'inverse'
         config_file = args.fm4pde / 'configs/main' / task / f'{pde}.yaml'
         config = load_config(config_file)
-        relative_checkpoint = Path(config.checkpoint_path).relative_to(args.fm4pde)
-        checkpoint = args.fm4pde_work / relative_checkpoint
+        checkpoint = Path(config.checkpoint_path).resolve()
         payload = read_checkpoint(checkpoint, pde)
         _validate_checkpoint_payload(payload, checkpoint)
         entry = {'task': task, 'checkpoint_source': str(checkpoint),
@@ -66,8 +65,8 @@ def main(args):
         link.symlink_to(checkpoint)
         del payload
         for split in ('id', 'smooth', 'rough'):
-            relative_data = Path(config.data_paths[split]).relative_to(args.fm4pde / 'datasets')
-            source = args.data_root / relative_data
+            configured = Path(config.data_paths[split])
+            source = args.data_root / configured.parent.name / configured.name
             source_stat = source.stat()
             split_config = load_config(config_file, overrides={
                 'data_path': str(source), 'test_type': split, 'batch_size': 100,
@@ -95,7 +94,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--fm4pde', type=Path, required=True)
-    parser.add_argument('--fm4pde-work', type=Path, required=True)
+    parser.add_argument('--fm4pde-work', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--data-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     main(parser.parse_args())

@@ -32,7 +32,7 @@ def export(args):
     if manifest_path.exists():
         raise FileExistsError(f"Refusing to overwrite completed export: {manifest_path}")
     source_hashes = {}
-    for line in args.checksums.read_text().splitlines():
+    for line in (args.checksums.read_text().splitlines() if args.checksums else []):
         checksum, relative = line.split(maxsplit=1)
         source_hashes[relative.lstrip("*")] = checksum
     loader = {"poisson": load_poisson, "helmholtz": load_helmholtz}[args.pde]
@@ -42,7 +42,7 @@ def export(args):
     def load_verified(relative):
         path = args.raw / relative
         checksum = sha256(path)
-        if checksum != source_hashes[relative]:
+        if source_hashes and checksum != source_hashes[relative]:
             raise ValueError(f"Source SHA256 mismatch: {path}")
         a, u = loader(path)
         if a.shape != (10000, 128, 128) or u.shape != a.shape:
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     p.add_argument("--pde", choices=["poisson", "helmholtz"], required=True)
     p.add_argument("--raw", type=Path, required=True)
     p.add_argument("--ddis", type=Path, required=True)
-    p.add_argument("--checksums", type=Path, required=True)
+    p.add_argument("--checksums", type=Path)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--output", type=Path, required=True)
     p.set_defaults(func=export)

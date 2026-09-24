@@ -1,5 +1,0 @@
-{
-  "source": "official/FunDPS/configs/training/poisson.yml",
-  "official_pde_preset": false,
-  "adaptation": "one-channel Burgers trajectory; reuse official FunDPS Poisson network/training hyperparameters"
-}

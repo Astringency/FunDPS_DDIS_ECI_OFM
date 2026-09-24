@@ -1,0 +1,22 @@
+{
+  "DDIS": {
+    "url": "https://github.com/neuraloperator/DDIS.git",
+    "revision": "0af48666d5eb80b6a8b41b7e730db9d40a0b5cac"
+  },
+  "FunDPS": {
+    "url": "https://github.com/neuraloperator/FunDPS.git",
+    "revision": "59933932614df13a7be4796a1d9b815a792ed7c1"
+  },
+  "OFM": {
+    "url": "https://github.com/yzshi5/SPL_OFM.git",
+    "revision": "d4e99d229c8698f75298042ba22b567ba5eeb45d"
+  },
+  "ECI": {
+    "url": "https://github.com/amazon-science/ECI-sampling.git",
+    "revision": "8c3061a70559b239c1cb3044662ba5de991fc949"
+  },
+  "neuraloperator": {
+    "url": "https://github.com/neuraloperator/neuraloperator.git",
+    "revision": "98cd305099f4a2b232ed85773984f3e5991f9b1a"
+  }
+}

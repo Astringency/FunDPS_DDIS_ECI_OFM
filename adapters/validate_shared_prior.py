@@ -50,7 +50,8 @@ def validate(output):
     channels = target.shape[1]
     rng = np.random.RandomState(run['seed'])
     expected_coefficient, expected_masks = [], []
-    for _ in range(100):
+    # The mask table covers the whole input bundle, even for a partial study run.
+    for _ in range(int(run.get('data_size', len(target)))):
         expected_coefficient.append(rng.choice(16384, 500, replace=False))
         expected_masks.append(rng.choice(16384, 500, replace=False))
     masks = np.load(output / 'solution_observation_indices.npy')

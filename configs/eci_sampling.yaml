@@ -1,0 +1,42 @@
+fm4pde:
+  poisson:
+    steps: 200
+    mixing: 1
+    resample: 5
+  helmholtz:
+    steps: 200
+    mixing: 1
+    resample: 5
+  darcy:
+    steps: 800
+    mixing: 5
+    resample: null
+  nsnonbounded:
+    steps: 200
+    mixing: 1
+    resample: 5
+  burger:
+    steps: 800
+    mixing: 5
+    resample: null
+ofm:
+  poisson:
+    steps: 200
+    mixing: 1
+    resample: 5
+  helmholtz:
+    steps: 200
+    mixing: 1
+    resample: 5
+  darcy:
+    steps: 800
+    mixing: 5
+    resample: null
+  nsnonbounded:
+    steps: 800
+    mixing: 5
+    resample: null
+  burger:
+    steps: 800
+    mixing: 5
+    resample: null

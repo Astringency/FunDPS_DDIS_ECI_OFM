@@ -1,7 +1,7 @@
-outdir: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/evaluation/fundps/helmholtz/id
+outdir: outputs/evaluation/fundps_helmholtz_id
 name: fm4pde_helmholtz_id_first100
 dataset: helmholtz
-data_path: /data1/zjinzxf2025/C01Python/DiffusionPDE/outputs/ddis_comparison_20260919/data/preprocessing/id/data/DiffPDE/helmholtz_test_hf
+data_path: __set_by_launcher__
 data_offset: 0
 resolution: 128
 max_size: 100

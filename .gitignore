@@ -1,4 +1,6 @@
 official/
+/data/
+/checkpoints/
 staging/
 transfers/
 *.bundle
@@ -6,3 +8,12 @@ provenance/*.log
 provenance/*.exit
 provenance/chunk_logs/
 __pycache__/
+
+.pytest_cache/
+outputs/
+
+# Development tests are retained outside the published repository.
+tests/
+/test/
+test_*.py
+pytest.ini
